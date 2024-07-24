@@ -30,13 +30,6 @@ extern "C"
                                      unsigned int * len,
                                      const char * fmt);
 
-// - packageEndPL -
-//
-//  Usage
-//  Same as tje_encode_to_file_at_quality, but it takes a callback that knows
-//  how to handle (or ignore) `context`. The callback receives an array `data`
-//  of `size` bytes, which can be written directly to a file. There is no need
-//  to free the data.
     int fillPLEnd(unsigned char * data,
                                    unsigned int * len);
 

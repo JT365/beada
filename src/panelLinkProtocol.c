@@ -73,7 +73,7 @@ static inline int packageDummyPL(unsigned char * data,
     return 0;
 }
 
-// - packageStartPL -
+// - fillPLStart -
 //   len 
 //       in -  length of buffer
 //       out - length of PL payload
@@ -106,7 +106,7 @@ int fillPLStart(unsigned char * data,
     return (packageDummyPL(data, PL_TYPE_START));
 }
 
-// - packageEndPL -
+// - fillPLEnd -
 //   len 
 //       in -  length of buffer
 //       out - length of PL payload
@@ -122,7 +122,7 @@ int fillPLEnd(unsigned char * data,
     return (packageDummyPL(data, PL_TYPE_END));
 }
 
-// - packageResetPL -
+// - fillPLReset -
 //   len 
 //       in -  length of buffer
 //       out - length of PL payload

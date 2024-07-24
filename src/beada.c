@@ -49,14 +49,19 @@
 #define MODEL_6IN8		"MPRO-6IN8\n"
 #define MODEL_3IN4		"MPRO-3IN4\n"
 
-struct beada_device {
-	struct drm_device dev;
-	struct device *dmadev;
-	struct usb_interface *interface;
-	struct backlight_device *bl_dev;
-	struct drm_simple_display_pipe pipe;
-	struct drm_connector conn;
+#define CMD_TIMEOUT			msecs_to_jiffies(200)
+#define DATA_TIMEOUT			msecs_to_jiffies(1000)
+#define IDLE_TIMEOUT			msecs_to_jiffies(2000)
+#define FIRST_FRAME_TIMEOUT		msecs_to_jiffies(2000)
 
+struct beada_device {
+	struct drm_device	         dev;
+	struct drm_simple_display_pipe   pipe;
+	struct drm_connector	         conn;
+	struct usb_device               *udev;
+	struct device *dmadev;
+
+	STATUSLINK_INFO	info;
 	unsigned int screen;
 	unsigned int version;
 	unsigned char id[8];
@@ -67,68 +72,49 @@ struct beada_device {
 	unsigned int margin;
 	unsigned int width_mm;
 	unsigned int height_mm;
-
-	unsigned char cmd[64];
 	unsigned char *draw_buf;
 
-	struct input_dev *input;
-	char name[64];
-	char phys[64];
-	struct urb *irq;
-	unsigned char *trans_buf;
-	dma_addr_t dma;
+	unsigned int misc_rcv_ept;
+	unsigned int data_rcv_ept;
+	unsigned int misc_snd_ept;
+	unsigned int data_snd_ept;
 };
-
-union beada_axis {
-	struct hx {
-		unsigned char h:4;
-		unsigned char u:2;
-		unsigned char f:2;
-	} x;
-
-	struct hy {
-		unsigned char h:4;
-		unsigned char id:4;
-	} y;
-
-	char c;
-};
-
 
 #define to_beada(__dev) container_of(__dev, struct beada_device, dev)
 
-static const char cmd_get_screen[5] = {
-	0x51, 0x02, 0x04, 0x1f, 0xfc
-};
+void HexDump(unsigned char *buf, int len, unsigned char *addr) {
+	int i, j, k;
+	char binstr[80];
 
-static const char cmd_get_version[5] = {
-	0x51, 0x02, 0x04, 0x1f, 0xf8
-};
-
-static const char cmd_get_id[5] = {
-	0x51, 0x02, 0x08, 0x1f, 0xf0
-};
-
-//static char cmd_draw[6] = {
-//	0x00, 0x2c, 0x00, 0x00, 0x00, 0x00
-//};
-
-static char cmd_draw_part[12] = {
-	0x00, 0x2c, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
-static char cmd_quit_sleep[6] = {
-	0x00, 0x29, 0x00, 0x00, 0x00, 0x00
-};
-
-static char cmd_set_brightness[8] = {
-	0x00, 0x51, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
-static inline struct usb_device *beada_to_usb_device(struct beada_device *beada)
-{
-	return interface_to_usbdev(to_usb_interface(beada->dev.dev));
+	for (i = 0; i < len; i++) {
+		if (0 == (i % 16)) {
+			sprintf(binstr, "%08x -", i + (int)addr);
+			sprintf(binstr, "%s %02x", binstr, (unsigned char)buf[i]);
+		}
+		else if (15 == (i % 16)) {
+			sprintf(binstr, "%s %02x", binstr, (unsigned char)buf[i]);
+			sprintf(binstr, "%s  ", binstr);
+			for (j = i - 15; j <= i; j++) {
+				sprintf(binstr, "%s%c", binstr, ('!' < buf[j] && buf[j] <= '~') ? buf[j] : '.');
+			}
+			TraceEvents(TRACE_LEVEL_INFORMATION, MYDRIVER_ALL_INFO, "%s\n", binstr);
+		}
+		else {
+			sprintf(binstr, "%s %02x", binstr, (unsigned char)buf[i]);
+		}
+	}
+	if (0 != (i % 16)) {
+		k = 16 - (i % 16);
+		for (j = 0; j < k; j++) {
+			sprintf(binstr, "%s   ", binstr);
+		}
+		sprintf(binstr, "%s  ", binstr);
+		k = 16 - k;
+		for (j = i - k; j < i; j++) {
+			sprintf(binstr, "%s%c", binstr, ('!' < buf[j] && buf[j] <= '~') ? buf[j] : '.');
+		}
+		TraceEvents(TRACE_LEVEL_INFORMATION, MYDRIVER_ALL_INFO, "%s\n", binstr);
+	}
 }
 
 static int beada_data_alloc(struct beada_device *beada)
@@ -144,36 +130,74 @@ static int beada_data_alloc(struct beada_device *beada)
 	return 0;
 }
 
-static int beada_send_command(struct beada_device *beada, void* cmd, unsigned int len)
+static int beada_send_tag(struct beada_device *beada, const char* cmd)
 {
-	struct usb_device *udev = beada_to_usb_device(beada);
+	int ret;
+	unsigned int len = MIN_Buffer_Size;
+	unsigned char temp[MIN_Buffer_Size];
 
-	if (len == 0)
-		return 0;
+	ret = fillPLStart((unsigned char *)temp, &len, cmd);	
+	if (ret || len != CMD_SIZE) {
+		GM12U320_ERR("Misc. req. error %d\n", ret);
+		return -EIO;
+	}
 
-	if (len > 64)
-		return -EINVAL;
+	HexDump(temp, len, temp);
 
-	/* Make sure use kmalloc memory space. */
-	memcpy(beada->cmd, cmd, len);
+	/* Send request */
+	ret = usb_bulk_msg(beada->udev,
+			   usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
+			   temp, len, &len, CMD_TIMEOUT);
 
-	/* 0x40 USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE */
-	return usb_control_msg(udev, usb_sndctrlpipe(udev, 0),
-				0xb0, 0x40, 0, 0, beada->cmd, len,
-				beada_MAX_DELAY);
+	if (ret || len != CMD_SIZE) {
+			GM12U320_ERR("Misc. req. error %d\n", ret);
+			return -EIO;
+	}
+
+	return 0;
 }
 
-static int beada_update_frame(struct beada_device *beada, unsigned int len)
+static int beada_misc_request(struct beada_device *beada)
 {
-	struct usb_device *udev = beada_to_usb_device(beada);
 	int ret;
+	unsigned int len = MIN_Buffer_Size;
+	unsigned char temp[MIN_Buffer_Size];
 
-	ret = beada_send_command(beada, cmd_draw_part, sizeof(cmd_draw_part));
-	if (ret < 0)
-		return ret;
+	// send statuslink command
+	ret = fillSLGetInfo(temp, &len);
 
-	return usb_bulk_msg(udev, usb_sndbulkpipe(udev, 0x02), beada->draw_buf,
-			    len, NULL, MPRO_MAX_DELAY);
+	if (ret || len != CMD_SIZE) {
+		GM12U320_ERR("Misc. req. error %d\n", ret);
+		return -EIO;
+	}
+
+	HexDump(temp, len, temp);
+
+	/* Send request */
+	ret = usb_bulk_msg(beada->udev,
+			   usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
+			   temp, len, &len, CMD_TIMEOUT);
+
+	if (ret || len != CMD_SIZE) {
+			GM12U320_ERR("Misc. req. error %d\n", ret);
+			return -EIO;
+	}
+
+	/* Read value */
+	len += sizeof(STATUSLINK_INFO);
+	ret = usb_bulk_msg(beada->udev,
+			   usb_rcvbulkpipe(beada->udev, beada->misc_rcv_ept),
+			   temp, len, &len,
+			   DATA_TIMEOUT);
+
+	if (ret || len != MISC_VALUE_SIZE) {
+			GM12U320_ERR("Misc. value error %d\n", ret);
+			return -EIO;
+	}
+
+	HexDump(temp, len, temp);
+	ret = retrivSLGetInfo(temp, len, &beada->info);
+	return 0;
 }
 
 static int beada_buf_copy(void *dst, const struct dma_buf_map *map, struct drm_framebuffer *fb, struct drm_rect *clip)
@@ -194,7 +218,8 @@ static int beada_buf_copy(void *dst, const struct dma_buf_map *map, struct drm_f
 static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf_map *map, struct drm_rect *rect)
 {
 	struct beada_device *beada = to_beada(fb->dev);
-	int idx, len, width, ret;
+	int idx, len, height, width, ret;
+	char fmtstr[256] = {0};
 
 	if (!drm_dev_enter(fb->dev, &idx))
 		return;
@@ -203,21 +228,29 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf
 	if (ret)
 		goto err_msg;
 
-	len = (rect->x2 - rect->x1) * (rect->y2 - rect->y1) * MPRO_BPP / 8;
-	width = rect->x2 - rect->x1;
+	/* send tag header if rect size changed */
+	if (!((beada->old_rect_x1 == rect->x1) &&
+		(beada->old_rect_y1 == rect->y1) &&
+		(beada->old_rect_x2 == rect->x2) &&
+		(beada->old_rect_y2 == rect->y2)) ) {
 
-	cmd_draw_part[6] = (char)(rect->x1 >> 0);
-	cmd_draw_part[7] = (char)(rect->x1 >> 8);
-	cmd_draw_part[8] = (char)(rect->y1 >> 0);
-	cmd_draw_part[9] = (char)(rect->y1 >> 8);
-	cmd_draw_part[10] = (char)(width >> 0);
-	cmd_draw_part[11] = (char)(width >> 8);
+		height = rect->y2 - rect->y1;
+		width = rect->x2 - rect->x1;
+		len = height * width * MPRO_BPP / 8;
+		sprintf(fmtstr, "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
+		ret = beada_send_tag(beada, (const char *)fmtstr);
+		if (ret < 0)
+			goto err_msg;
+	}
 
-	cmd_draw_part[2] = (char)(len >> 0);
-	cmd_draw_part[3] = (char)(len >> 8);
-	cmd_draw_part[4] = (char)(len >> 16);
+	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), beada->draw_buf,
+			    len, NULL, MPRO_MAX_DELAY);
 
-	ret = beada_update_frame(beada, len);
+	beada->old_rect_x1 = rect->x1;
+	beada->old_rect_y1 = rect->y1;
+	beada->old_rect_x2 = rect->x2;
+	beada->old_rect_y2 = rect->y2;
+
 err_msg:
 	if (ret)
 		dev_err_once(fb->dev->dev, "Failed to update display %d\n", ret);
@@ -236,19 +269,19 @@ err_msg:
  */
 static struct edid beada_edid = {
 	.header		= { 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00 },
-	.mfg_id		= { 0x59, 0xe3 },	/* "VOC" */
-	.prod_code	= { 0x04, 0x10 },	/* 1004 */
-	.serial		= 0xdeadbeef,
-	.mfg_week	= 16,
+	.mfg_id		= { 0x3b, 0x05 },	/* "NXE" */
+	.prod_code	= { 0x01, 0x10 },	/* 1001h */
+	.serial		= 0xaa55aa55,
+	.mfg_week	= 1,
 	.mfg_year	= 24,
 	.version	= 1,			/* EDID 1.3 */
 	.revision	= 3,			/* EDID 1.3 */
-	.input		= 0x80,			/* Digital input */
-	.features	= 0x02,			/* Pref timing in DTD 1 */
+	.input		= 0x08,			/* Analog input */
+	.features	= 0x0a,			/* Pref timing in DTD 1 */
 	.standard_timings = { { 1, 1 }, { 1, 1 }, { 1, 1 }, { 1, 1 },
 			      { 1, 1 }, { 1, 1 }, { 1, 1 }, { 1, 1 } },
 	.detailed_timings = { {
-		.pixel_clock = 1800,
+		.pixel_clock = 3383,
 		/* hactive = 848, hblank = 256 */
 		.data.pixel_data.hactive_lo = 0x50,
 		.data.pixel_data.hblank_lo = 0x00,
@@ -267,11 +300,11 @@ static struct edid beada_edid = {
 	}, {
 		.pixel_clock = 0,
 		.data.other_data.type = 0xfd, /* Monitor ranges */
-		.data.other_data.data.range.min_vfreq = 27,
-		.data.other_data.data.range.max_vfreq = 33,
+		.data.other_data.data.range.min_vfreq = 59,
+		.data.other_data.data.range.max_vfreq = 61,
 		.data.other_data.data.range.min_hfreq_khz = 29,
 		.data.other_data.data.range.max_hfreq_khz = 32,
-		.data.other_data.data.range.pixel_clock_mhz = 2,
+		.data.other_data.data.range.pixel_clock_mhz = 4, /* 40 MHz */
 		.data.other_data.data.range.flags = 0,
 		.data.other_data.data.range.formula.cvt = {
 			0xa0, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20 },
@@ -279,16 +312,16 @@ static struct edid beada_edid = {
 		.pixel_clock = 0,
 		.data.other_data.type = 0xfc, /* Model string */
 		.data.other_data.data.str.str = {
-			'M', 'P', 'R', 'O', '\n', ' ', ' ', ' ', ' ', ' ',
-			' ', ' ', ' ' },
+			'P', 'r', 'o', 'j', 'e', 'c', 't', 'o', 'r', '\n',
+			' ', ' ',  ' ' },
 	}, {
 		.pixel_clock = 0,
-		.data.other_data.type = 0xff, /* Serial Number */
+		.data.other_data.type = 0xfe, /* Unspecified text / padding */
 		.data.other_data.data.str.str = {
 			'\n', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
 			' ', ' ',  ' ' },
 	} },
-	.checksum = 0x00,
+	.checksum = 0x13,
 };
 
 static int beada_conn_get_modes(struct drm_connector *connector)
@@ -301,51 +334,12 @@ static const struct drm_connector_helper_funcs beada_conn_helper_funcs = {
 	.get_modes = beada_conn_get_modes,
 };
 
-static int beada_backlight_update_status(struct backlight_device *bd)
-{
-	struct beada_device *beada = bl_get_data(bd);
-	int brightness = backlight_get_brightness(bd);
-	int ret;
-
-	cmd_set_brightness[6] = brightness & 0xff;
-	ret = beada_send_command(beada, cmd_set_brightness, sizeof(cmd_set_brightness));
-	if (ret < 0)
-		return ret;
-
-	return 0;
-}
-
-static const struct backlight_ops beada_bl_ops = {
-	.update_status = beada_backlight_update_status,
-};
-
-static int beada_conn_late_register(struct drm_connector *connector)
-{
-	struct beada_device *beada = to_beada(connector->dev);
-	struct backlight_device *bl;
-
-	bl = devm_backlight_device_register(connector->kdev, "beada_backlight",
-					    connector->kdev, beada,
-					    &beada_bl_ops, NULL);
-	if (IS_ERR(bl)) {
-		drm_err(connector->dev, "Unable to register backlight device\n");
-		return -EIO;
-	}
-
-	bl->props.brightness = 255;
-	bl->props.max_brightness = 255;
-	beada->bl_dev = bl;
-
-	return 0;
-}
-
 static const struct drm_connector_funcs beada_conn_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = drm_connector_cleanup,
 	.reset = drm_atomic_helper_connector_reset,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
-	.late_register = beada_conn_late_register,
 };
 
 static int beada_conn_init(struct beada_device *beada)
@@ -369,7 +363,6 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 		.y2 = fb->height,
 	};
 
-	beada_send_command(beada, cmd_quit_sleep, sizeof(cmd_quit_sleep));
 	beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect);
 }
 
@@ -430,106 +423,6 @@ static const struct drm_mode_config_funcs beada_mode_config_funcs = {
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };
-
-static int beada_get_screen(struct beada_device *beada)
-{
-	struct usb_device *udev = beada_to_usb_device(beada);
-	void *cmd = beada->cmd;
-	int ret;
-
-	ret = usb_control_msg(udev, usb_sndctrlpipe(udev, 0),
-			      0xb5, 0x40, 0, 0,
-			      (void *)cmd_get_screen, 5,
-			      MPRO_MAX_DELAY);
-	if (ret < 5)
-		goto err;
-
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
-			      0xb6, 0xc0, 0, 0,
-			      cmd, 1,
-			      MPRO_MAX_DELAY);
-	if (ret < 1)
-		goto err;
-
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
-			      0xb7, 0xc0, 0, 0,
-			      cmd, 5,
-			      MPRO_MAX_DELAY);
-	if (ret < 5)
-		goto err;
-
-	beada->screen = ((unsigned int *)(cmd + 1))[0];
-	return 0;
-err:
-	return -EIO;
-}
-
-static int beada_get_version(struct beada_device *beada)
-{
-	struct usb_device *udev = beada_to_usb_device(beada);
-	void *cmd = beada->cmd;
-	int ret;
-
-	ret = usb_control_msg(udev, usb_sndctrlpipe(udev, 0),
-			      0xb5, 0x40, 0, 0,
-			      (void *)cmd_get_version, 5,
-			      MPRO_MAX_DELAY);
-	if (ret < 5)
-		goto err;
-
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
-			      0xb6, 0xc0, 0, 0,
-			      cmd, 1,
-			      MPRO_MAX_DELAY);
-	if (ret < 1)
-		goto err;
-
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
-			      0xb7, 0xc0, 0, 0,
-			      cmd, 5,
-			      MPRO_MAX_DELAY);
-	if (ret < 5)
-		goto err;
-
-	beada->version = ((unsigned int *)(cmd + 1))[0];
-	return 0;
-err:
-	return -EIO;
-}
-
-static int beada_get_id(struct beada_device *beada)
-{
-	struct usb_device *udev = beada_to_usb_device(beada);
-	void *cmd = beada->cmd;
-	int ret;
-
-	ret = usb_control_msg(udev, usb_sndctrlpipe(udev, 0),
-			      0xb5, 0x40, 0, 0,
-			      (void *)cmd_get_id, 5,
-			      MPRO_MAX_DELAY);
-	if (ret < 5)
-		goto err;
-
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
-			      0xb6, 0xc0, 0, 0,
-			      cmd, 1,
-			      MPRO_MAX_DELAY);
-	if (ret < 1)
-		goto err;
-
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
-			      0xb7, 0xc0, 0, 0,
-			      cmd, 9,
-			      MPRO_MAX_DELAY);
-	if (ret < 5)
-		goto err;
-
-	memcpy(beada->id, cmd + 1, 8);
-
-	return 0;
-err:
-	return -EIO;
-}
 
 static void beada_mode_config_setup(struct beada_device *beada)
 {
@@ -678,28 +571,22 @@ static int beada_usb_probe(struct usb_interface *interface,
 				      struct beada_device, dev);
 	if (IS_ERR(beada))
 		return PTR_ERR(beada);
-	dev = &beada->dev;
-	beada->interface = interface;
+	
+	/* Check corresponding endpoint number */
+    beada->misc_snd_ept = 4;
+    beada->misc_rcv_ept = 3;
+    beada->data_snd_ept = 2;
+    beada->data_rcv_ept = 1;
 
+	dev = &beada->dev;
+	beada->udev = interface_to_usbdev(interface);
 	beada->dmadev = usb_intf_get_dma_device(to_usb_interface(dev->dev));
 	if (!beada->dmadev)
 		drm_warn(dev, "buffer sharing not supported"); /* not an error */
 
-	ret = beada_get_screen(beada);
+	ret = beada_misc_request(beada);
 	if (ret) {
 		drm_err(dev, "cant't get screen info.\n");
-		goto err_put_device;
-	}
-
-	ret = beada_get_version(beada);
-	if (ret) {
-		drm_err(dev, "cant't get screen version.\n");
-		goto err_put_device;
-	}
-
-	ret = beada_get_id(beada);
-	if (ret) {
-		drm_err(dev, "cant't get screen id.\n");
 		goto err_put_device;
 	}
 
@@ -750,11 +637,6 @@ static void beada_usb_disconnect(struct usb_interface *interface)
 {
 	struct drm_device *dev = usb_get_intfdata(interface);
 	struct beada_device *beada = to_beada(dev);
-	struct usb_device *udev = beada_to_usb_device(beada);
-
-	usb_free_urb(beada->irq);
-	usb_free_coherent(udev, MPRO_INPUT_TRS_SIZE, beada->trans_buf,
-			  beada->dma);
 
 	put_device(beada->dmadev);
 	beada->dmadev = NULL;

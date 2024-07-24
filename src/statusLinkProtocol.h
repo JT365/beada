@@ -22,8 +22,6 @@
 #ifndef _STATUS_LINK_PROTOCOL_H
 #define _STATUS_LINK_PROTOCOL_H
 
-#include <windows.h>
-
 #define MIN_Buffer_Size 512
 
 #pragma pack(push) //�������״̬
@@ -50,7 +48,7 @@ extern "C"
 {
 #endif
 
-// - packageResetSL -
+// - fillSLReset -
 //   len 
 //       in -  length of buffer
 //       out - length of SL payload
@@ -59,7 +57,7 @@ extern "C"
 //
 int fillSLReset(unsigned char * data, unsigned int * len);
 
-// - packageSetBLSL -
+// - fillSLSetBL -
 //   len 
 //       in -  length of buffer
 //       out - length of SL payload
@@ -68,7 +66,7 @@ int fillSLReset(unsigned char * data, unsigned int * len);
 //
 int fillSLSetBL(unsigned char * data, unsigned int * len, unsigned char value);
 
-// - packageSetTimeSL -
+// - fillSLSetTime -
 //   len 
 //       in -  length of buffer
 //       out - length of SL payload
@@ -77,7 +75,7 @@ int fillSLSetBL(unsigned char * data, unsigned int * len, unsigned char value);
 //
 int fillSLSetTime(unsigned char * data, unsigned int * len, SYSTEMTIME * value);
 
-// - packageGetInfoSL -
+// - fillSLGetInfo -
 //   len 
 //       in -  length of buffer
 //       out - length of SL payload
@@ -86,7 +84,7 @@ int fillSLSetTime(unsigned char * data, unsigned int * len, SYSTEMTIME * value);
 //
 int fillSLGetInfo(unsigned char * data, unsigned int * len);
 
-// - depackGetInfoSL -
+// - retrivSLGetInfo -
 //   len 
 //       in -  length of buffer
 //       out - length of SL payload
