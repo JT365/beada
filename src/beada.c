@@ -6,7 +6,6 @@
 #include <linux/module.h>
 #include <linux/pm.h>
 #include <linux/usb.h>
-#include <linux/backlight.h>
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_atomic_state_helper.h>
@@ -37,29 +36,32 @@
 #define DRIVER_MAJOR		1
 #define DRIVER_MINOR		0
 
-#define MPRO_BPP		16
-#define MPRO_MAX_DELAY		100
-#define MPRO_INPUT_TRS_SIZE	14
+#define MODEL_3			3
+#define MODEL_4			4
+#define MODEL_5			0
+#define MODEL_6			2
+#define MODEL_5C		10
+#define MODEL_5S		11
+#define MODEL_7C		12
+#define MODEL_3C		13
+#define MODEL_4C		14
+#define MODEL_6C		15
+#define MODEL_6S		16
+#define MODEL_2			17
+#define MODEL_2W		18 
 
-#define MODEL_DEFAULT		"MPRO\n"
-#define MODEL_5IN		"MPRO-5\n"
-#define MODEL_5IN_OLED		"MPRO-5H\n"
-#define MODEL_4IN3		"MPRO-4IN3\n"
-#define MODEL_4IN		"MPRO-4\n"
-#define MODEL_6IN8		"MPRO-6IN8\n"
-#define MODEL_3IN4		"MPRO-3IN4\n"
-
-#define CMD_TIMEOUT			msecs_to_jiffies(200)
+#define RGB565_BPP				16
+#define CMD_TIMEOUT				msecs_to_jiffies(200)
 #define DATA_TIMEOUT			msecs_to_jiffies(1000)
-#define IDLE_TIMEOUT			msecs_to_jiffies(2000)
-#define FIRST_FRAME_TIMEOUT		msecs_to_jiffies(2000)
+#define PANELLINK_MAX_DELAY		msecs_to_jiffies(1000)
+#define CMD_SIZE				512*4
 
 struct beada_device {
-	struct drm_device	         dev;
-	struct drm_simple_display_pipe   pipe;
-	struct drm_connector	         conn;
-	struct usb_device               *udev;
-	struct device *dmadev;
+	struct drm_device				dev;
+	struct drm_simple_display_pipe	pipe;
+	struct drm_connector			conn;
+	struct usb_device				*udev;
+	struct device					*dmadev;
 
 	STATUSLINK_INFO	info;
 	unsigned int screen;
@@ -67,17 +69,21 @@ struct beada_device {
 	unsigned char id[8];
 	char *model;
 
-	unsigned int width;
-	unsigned int height;
-	unsigned int margin;
-	unsigned int width_mm;
-	unsigned int height_mm;
-	unsigned char *draw_buf;
+	unsigned int	width;
+	unsigned int	height;
+	unsigned int	margin;
+	unsigned int	width_mm;
+	unsigned int	height_mm;
+	unsigned char	*cmd_buf;
+	unsigned char	*draw_buf;
+	int				old_rect_x1;
+	int				old_rect_y1;
+	int				old_rect_x2;
+	int				old_rect_y2;
 
-	unsigned int misc_rcv_ept;
-	unsigned int data_rcv_ept;
-	unsigned int misc_snd_ept;
-	unsigned int data_snd_ept;
+	unsigned int	misc_rcv_ept;
+	unsigned int	misc_snd_ept;
+	unsigned int	data_snd_ept;
 };
 
 #define to_beada(__dev) container_of(__dev, struct beada_device, dev)
@@ -97,7 +103,7 @@ void HexDump(unsigned char *buf, int len, unsigned char *addr) {
 			for (j = i - 15; j <= i; j++) {
 				sprintf(binstr, "%s%c", binstr, ('!' < buf[j] && buf[j] <= '~') ? buf[j] : '.');
 			}
-			TraceEvents(TRACE_LEVEL_INFORMATION, MYDRIVER_ALL_INFO, "%s\n", binstr);
+			printk(KERN_DEBUG "%s\n", binstr);
 		}
 		else {
 			sprintf(binstr, "%s %02x", binstr, (unsigned char)buf[i]);
@@ -113,7 +119,7 @@ void HexDump(unsigned char *buf, int len, unsigned char *addr) {
 		for (j = i - k; j < i; j++) {
 			sprintf(binstr, "%s%c", binstr, ('!' < buf[j] && buf[j] <= '~') ? buf[j] : '.');
 		}
-		TraceEvents(TRACE_LEVEL_INFORMATION, MYDRIVER_ALL_INFO, "%s\n", binstr);
+		printk(KERN_DEBUG "%s\n", binstr);
 	}
 }
 
@@ -121,10 +127,14 @@ static int beada_data_alloc(struct beada_device *beada)
 {
 	int block_size;
 
-	block_size = beada->height * beada->width * MPRO_BPP / 8 + beada->margin;
+	block_size = beada->height * beada->width * RGB565_BPP / 8 + beada->margin;
 
 	beada->draw_buf = drmm_kmalloc(&beada->dev, block_size, GFP_KERNEL);
 	if (!beada->draw_buf)
+		return -ENOMEM;
+
+	beada->cmd_buf = drmm_kmalloc(&beada->dev, CMD_SIZE, GFP_KERNEL);
+	if (!beada->cmd_buf)
 		return -ENOMEM;
 
 	return 0;
@@ -133,24 +143,24 @@ static int beada_data_alloc(struct beada_device *beada)
 static int beada_send_tag(struct beada_device *beada, const char* cmd)
 {
 	int ret;
-	unsigned int len = MIN_Buffer_Size;
-	unsigned char temp[MIN_Buffer_Size];
+	unsigned int len = CMD_SIZE;
+	unsigned int len1;
 
-	ret = fillPLStart((unsigned char *)temp, &len, cmd);	
+	ret = fillPLStart((unsigned char *)beada->cmd_buf, &len, cmd);	
 	if (ret || len != CMD_SIZE) {
-		GM12U320_ERR("Misc. req. error %d\n", ret);
+		DRM_DEV_ERROR(&beada->udev->dev, "fillPLStart() error %d\n", ret);
 		return -EIO;
 	}
 
-	HexDump(temp, len, temp);
+	HexDump(beada->cmd_buf, len, beada->cmd_buf);
 
 	/* Send request */
 	ret = usb_bulk_msg(beada->udev,
 			   usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
-			   temp, len, &len, CMD_TIMEOUT);
+			   beada->cmd_buf, len, &len1, CMD_TIMEOUT);
 
-	if (ret || len != CMD_SIZE) {
-			GM12U320_ERR("Misc. req. error %d\n", ret);
+	if (ret || len != len1) {
+			DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() error %d\n", ret);
 			return -EIO;
 	}
 
@@ -160,26 +170,25 @@ static int beada_send_tag(struct beada_device *beada, const char* cmd)
 static int beada_misc_request(struct beada_device *beada)
 {
 	int ret;
-	unsigned int len = MIN_Buffer_Size;
-	unsigned char temp[MIN_Buffer_Size];
+	unsigned int len = CMD_SIZE;
+	unsigned int len1;
 
 	// send statuslink command
-	ret = fillSLGetInfo(temp, &len);
-
-	if (ret || len != CMD_SIZE) {
-		GM12U320_ERR("Misc. req. error %d\n", ret);
+	ret = fillSLGetInfo(beada->cmd_buf, &len);
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "Misc. req. error %d\n", ret);
 		return -EIO;
 	}
 
-	HexDump(temp, len, temp);
+	HexDump(beada->cmd_buf, len, beada->cmd_buf);
 
 	/* Send request */
 	ret = usb_bulk_msg(beada->udev,
 			   usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
-			   temp, len, &len, CMD_TIMEOUT);
+			   beada->cmd_buf, len, &len1, CMD_TIMEOUT);
 
-	if (ret || len != CMD_SIZE) {
-			GM12U320_ERR("Misc. req. error %d\n", ret);
+	if (ret || len1 != len) {
+			DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
 			return -EIO;
 	}
 
@@ -187,16 +196,21 @@ static int beada_misc_request(struct beada_device *beada)
 	len += sizeof(STATUSLINK_INFO);
 	ret = usb_bulk_msg(beada->udev,
 			   usb_rcvbulkpipe(beada->udev, beada->misc_rcv_ept),
-			   temp, len, &len,
+			   beada->cmd_buf, len, &len1,
 			   DATA_TIMEOUT);
 
-	if (ret || len != MISC_VALUE_SIZE) {
-			GM12U320_ERR("Misc. value error %d\n", ret);
+	if (ret || len1 != len) {
+			DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() read error %d\n", ret);
 			return -EIO;
 	}
 
-	HexDump(temp, len, temp);
-	ret = retrivSLGetInfo(temp, len, &beada->info);
+	HexDump(beada->cmd_buf, len, beada->cmd_buf);
+	ret = retrivSLGetInfo(beada->cmd_buf, len, &beada->info);
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "retrivSLGetInfo() error %d\n", ret);
+		return -EIO;
+	}
+
 	return 0;
 }
 
@@ -236,15 +250,15 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf
 
 		height = rect->y2 - rect->y1;
 		width = rect->x2 - rect->x1;
-		len = height * width * MPRO_BPP / 8;
-		sprintf(fmtstr, "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
+		len = height * width * RGB565_BPP / 8;
+		snprintf(fmtstr, sizeof(fmtstr), "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
 		ret = beada_send_tag(beada, (const char *)fmtstr);
 		if (ret < 0)
 			goto err_msg;
 	}
 
 	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), beada->draw_buf,
-			    len, NULL, MPRO_MAX_DELAY);
+			    len, NULL, PANELLINK_MAX_DELAY);
 
 	beada->old_rect_x1 = rect->x1;
 	beada->old_rect_y1 = rect->y1;
@@ -428,60 +442,101 @@ static void beada_mode_config_setup(struct beada_device *beada)
 {
 	struct drm_device *dev = &beada->dev;
 	int width, height, margin, width_mm, height_mm;
-	char *model = MODEL_DEFAULT;
-
-	width  = 480;
-	height = 800;
-	margin = 0;
-	width_mm = 0;
-	height_mm = 0;
+	char *model;
 
 	switch (beada->screen) {
-	case 0x00000005:
-		model = MODEL_5IN;
-		height = 854;
-		width_mm = 62;
-		height_mm = 110;
-		if (beada->version != 0x00000003)
-			margin = 320;
-		break;
-
-	case 0x00001005:
-		model = MODEL_5IN_OLED;
-		width = 720;
-		height = 1280;
-		width_mm = 62;
-		height_mm = 110;
-		break;
-
-	case 0x00000304:
-		model = MODEL_4IN3;
-		width_mm = 56;
-		height_mm = 94;
-		break;
-
-	case 0x00000004:
-	case 0x00000b04:
-	case 0x00000104:
-		model = MODEL_4IN;
+	case MODEL_2:
+		model = "2";
+		width = 480;
+		height = 480;
 		width_mm = 53;
-		height_mm = 86;
+		height_mm = 53;
 		break;
-
-	case 0x00000007:
-		model = MODEL_6IN8;
+	case MODEL_2W:
+		model = "2W";
+		width = 480;
+		height = 480;
+		width_mm = 70;
+		height_mm = 70;
+		break;
+	case MODEL_3:
+		model = "3";
+		width = 480;
+		height = 320;
+		width_mm = 62;
+		height_mm = 40;
+		break;
+	case MODEL_4:
+		model = "4";
 		width = 800;
 		height = 480;
-		width_mm = 89;
-		height_mm = 148;
+		width_mm = 94;
+		height_mm = 56;
+		break;
+	case MODEL_3C:
+		model = "3C";
+		width = 480;
+		height = 320;
+		width_mm = 62;
+		height_mm = 40;
+		break;
+	case MODEL_4C:
+		model = "4C";
+		width = 800;
+		height = 480;
+		width_mm = 94;
+		height_mm = 56;
+		break;
+	case MODEL_5:
+		model = "5";
+		width = 800;
+		height = 480;
+		width_mm = 108;
+		height_mm = 65;
 		break;
 
-	case 0x00000403:
-		model = MODEL_3IN4;
+	case MODEL_5S:
+		model = "5S";
 		width = 800;
-		height = 800;
-		width_mm = 88;
-		height_mm = 88;
+		height = 480;
+		width_mm = 108;
+		height_mm = 65;
+		break;
+	case MODEL_6:
+		model = "6";
+		width = 1280;
+		height = 480;
+		width_mm = 161;
+		height_mm = 60;
+		break;
+	case MODEL_6C:
+		model = "6C";
+		width = 1280;
+		height = 480;
+		width_mm = 161;
+		height_mm = 60;
+		break;
+	case MODEL_6S:
+		model = "6S";
+		width = 1280;
+		height = 480;
+		width_mm = 161;
+		height_mm = 60;
+		break;
+	case MODEL_7C:
+		model = "7C";
+		width = 800;
+		height = 480;
+		width_mm = 62;
+		height_mm = 110;
+		break;
+	default:
+		model = "5";
+		width  = 800;
+		height = 4800;
+		margin = 0;
+		width_mm = 108;
+		height_mm = 65;	
 		break;
 	}
 
@@ -569,41 +624,48 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	beada = devm_drm_dev_alloc(&interface->dev, &beada_drm_driver,
 				      struct beada_device, dev);
-	if (IS_ERR(beada))
+	if (IS_ERR(beada)) {
+		DRM_DEV_ERROR(&beada->udev->dev, "devm_drm_dev_alloc() failed\n");
 		return PTR_ERR(beada);
+	}
 	
 	/* Check corresponding endpoint number */
     beada->misc_snd_ept = 4;
     beada->misc_rcv_ept = 3;
     beada->data_snd_ept = 2;
-    beada->data_rcv_ept = 1;
 
 	dev = &beada->dev;
 	beada->udev = interface_to_usbdev(interface);
 	beada->dmadev = usb_intf_get_dma_device(to_usb_interface(dev->dev));
 	if (!beada->dmadev)
-		drm_warn(dev, "buffer sharing not supported"); /* not an error */
+		DRM_DEV_DEBUG(&beada->udev->dev, "buffer sharing not supported"); /* not an error */
 
 	ret = beada_misc_request(beada);
 	if (ret) {
-		drm_err(dev, "cant't get screen info.\n");
+		DRM_DEV_ERROR(&beada->udev->dev, "cant't get screen info.\n");
 		goto err_put_device;
 	}
 
 	ret = drmm_mode_config_init(dev);
-	if (ret)
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "drmm_mode_config_init() return %d\n", ret);
 		goto err_put_device;
+	}
 
 	beada_mode_config_setup(beada);
 	beada_edid_setup(beada);
 
 	ret = beada_data_alloc(beada);
-	if (ret)
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "beada_data_alloc() return %d\n", ret);
 		goto err_put_device;
+	}
 
 	ret = beada_conn_init(beada);
-	if (ret)
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "beada_conn_init() return %d\n", ret);
 		goto err_put_device;
+	}
 
 	ret = drm_simple_display_pipe_init(&beada->dev,
 					   &beada->pipe,
@@ -612,8 +674,10 @@ static int beada_usb_probe(struct usb_interface *interface,
 					   ARRAY_SIZE(beada_pipe_formats),
 					   beada_pipe_modifiers,
 					   &beada->conn);
-	if (ret)
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "drm_simple_display_pipe_init() return %d\n", ret);
 		goto err_put_device;
+	}
 
 	drm_plane_enable_fb_damage_clips(&beada->pipe.plane);
 
@@ -621,15 +685,21 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	usb_set_intfdata(interface, dev);
 	ret = drm_dev_register(dev, 0);
-	if (ret)
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "drm_dev_register() return %d\n", ret);
 		goto err_put_device;
+	}
+
 
 	drm_fbdev_generic_setup(dev, 0);
 
+	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_probe() exit\n");
 	return ret;
 
 err_put_device:
 	put_device(beada->dmadev);
+
+	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_probe() exit from err_put_device\n");
 	return ret;
 }
 
@@ -638,10 +708,14 @@ static void beada_usb_disconnect(struct usb_interface *interface)
 	struct drm_device *dev = usb_get_intfdata(interface);
 	struct beada_device *beada = to_beada(dev);
 
+	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_disconnect() enter\n");
+
 	put_device(beada->dmadev);
 	beada->dmadev = NULL;
 	drm_dev_unplug(dev);
 	drm_atomic_helper_shutdown(dev);
+
+	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_disconnect() exit\n");
 }
 
 static const struct usb_device_id id_table[] = {

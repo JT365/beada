@@ -66,15 +66,6 @@ int fillSLReset(unsigned char * data, unsigned int * len);
 //
 int fillSLSetBL(unsigned char * data, unsigned int * len, unsigned char value);
 
-// - fillSLSetTime -
-//   len 
-//       in -  length of buffer
-//       out - length of SL payload
-//   value
-//       in - value of backlight level.
-//
-int fillSLSetTime(unsigned char * data, unsigned int * len, SYSTEMTIME * value);
-
 // - fillSLGetInfo -
 //   len 
 //       in -  length of buffer

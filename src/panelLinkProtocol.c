@@ -18,7 +18,7 @@
  *
  */
 
-#include <string.h>
+#include <linux/module.h>
 #include "panelLinkProtocol.h"
 
 #define LOGW(fmt, ...) do {;} while(0)

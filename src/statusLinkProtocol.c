@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/module.h>
 #include "statusLinkProtocol.h"
 
 #define LOGW(fmt, ...) do {;} while(0)
@@ -59,11 +60,6 @@ typedef struct _STATUSLINK_BL_PACK {
 	STATUSLINK_TAG header;
 	unsigned char value;
 }  STATUSLINK_BL_PACK;
-
-typedef struct _STATUSLINK_TIME_PACK {
-	STATUSLINK_TAG header;
-	SYSTEMTIME value;
-}  STATUSLINK_TIME_PACK;
 
 typedef struct _STATUSLINK_TEMP_PACK {
 	STATUSLINK_TAG header;
@@ -219,29 +215,3 @@ int fillSLSetBL(unsigned char * data,
     *len = sizeof(STATUSLINK_BL_PACK);
     return (packageDummySL(data, TYPE_SET_BACKLIGHT));
 }
-
-// - packageSetTimeSL -
-//   len 
-//       in -  length of buffer
-//       out - length of SL payload
-//   value
-//       in - value of backlight level.
-//
-int fillSLSetTime(unsigned char * data,
-                     unsigned int * len,
-                     SYSTEMTIME * value)
-{ 
-    // check length of data       	
-    if (*len < sizeof(STATUSLINK_TIME_PACK))
-    	return -1;
-    	
-    STATUSLINK_TIME_PACK * pTemp = (STATUSLINK_TIME_PACK *)data;
-	
-    pTemp->header.length = sizeof(STATUSLINK_TIME_PACK);
-    pTemp->value = *value;    
-
-    *len = sizeof(STATUSLINK_TIME_PACK);
-    return (packageDummySL(data, TYPE_SET_TIME));    
-}
-
-
