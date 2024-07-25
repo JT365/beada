@@ -147,7 +147,7 @@ static int beada_send_tag(struct beada_device *beada, const char* cmd)
 	unsigned int len1;
 
 	ret = fillPLStart((unsigned char *)beada->cmd_buf, &len, cmd);	
-	if (ret || len != CMD_SIZE) {
+	if (ret) {
 		DRM_DEV_ERROR(&beada->udev->dev, "fillPLStart() error %d\n", ret);
 		return -EIO;
 	}
@@ -251,7 +251,7 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf
 		height = rect->y2 - rect->y1;
 		width = rect->x2 - rect->x1;
 		len = height * width * RGB565_BPP / 8;
-		snprintf(fmtstr, sizeof(fmtstr), "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
+		snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
 		ret = beada_send_tag(beada, (const char *)fmtstr);
 		if (ret < 0)
 			goto err_msg;
@@ -630,9 +630,9 @@ static int beada_usb_probe(struct usb_interface *interface,
 	}
 	
 	/* Check corresponding endpoint number */
-    beada->misc_snd_ept = 4;
-    beada->misc_rcv_ept = 3;
-    beada->data_snd_ept = 2;
+	beada->misc_snd_ept = 4;
+	beada->misc_rcv_ept = 3;
+	beada->data_snd_ept = 2;
 
 	dev = &beada->dev;
 	beada->udev = interface_to_usbdev(interface);
