@@ -123,30 +123,15 @@ void HexDump(unsigned char *buf, int len, unsigned char *addr) {
 	}
 }
 
-static int beada_data_alloc(struct beada_device *beada)
-{
-	int block_size;
-
-	block_size = beada->height * beada->width * RGB565_BPP / 8 + beada->margin;
-
-	beada->draw_buf = drmm_kmalloc(&beada->dev, block_size, GFP_KERNEL);
-	if (!beada->draw_buf)
-		return -ENOMEM;
-
-	beada->cmd_buf = drmm_kmalloc(&beada->dev, CMD_SIZE, GFP_KERNEL);
-	if (!beada->cmd_buf)
-		return -ENOMEM;
-
-	return 0;
-}
-
 static int beada_send_tag(struct beada_device *beada, const char* cmd)
 {
 	int ret;
-	unsigned int len = CMD_SIZE;
-	unsigned int len1;
+	unsigned int len, len1;
 
-	ret = fillPLStart((unsigned char *)beada->cmd_buf, &len, cmd);	
+	len = CMD_SIZE;
+
+    /* prepare tag header */
+	ret = fillPLStart(beada->cmd_buf, &len, cmd);	
 	if (ret) {
 		DRM_DEV_ERROR(&beada->udev->dev, "fillPLStart() error %d\n", ret);
 		return -EIO;
@@ -154,14 +139,14 @@ static int beada_send_tag(struct beada_device *beada, const char* cmd)
 
 	HexDump(beada->cmd_buf, len, beada->cmd_buf);
 
-	/* Send request */
+	/* send request */
 	ret = usb_bulk_msg(beada->udev,
-			   usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
-			   beada->cmd_buf, len, &len1, CMD_TIMEOUT);
+			usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
+			beada->cmd_buf, len, &len1, CMD_TIMEOUT);
 
 	if (ret || len != len1) {
-			DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() error %d\n", ret);
-			return -EIO;
+		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() error %d\n", ret);
+		return -EIO;
 	}
 
 	return 0;
@@ -170,41 +155,43 @@ static int beada_send_tag(struct beada_device *beada, const char* cmd)
 static int beada_misc_request(struct beada_device *beada)
 {
 	int ret;
-	unsigned int len = CMD_SIZE;
-	unsigned int len1;
+	unsigned int len, len1;
 
-	// send statuslink command
+    len = CMD_SIZE;
+
+	// prepare statuslink command
 	ret = fillSLGetInfo(beada->cmd_buf, &len);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "Misc. req. error %d\n", ret);
+		DRM_DEV_ERROR(&beada->udev->dev, "fillSLGetInfo() error %d\n", ret);
 		return -EIO;
 	}
 
 	HexDump(beada->cmd_buf, len, beada->cmd_buf);
 
-	/* Send request */
+	/* send request */
 	ret = usb_bulk_msg(beada->udev,
-			   usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
-			   beada->cmd_buf, len, &len1, CMD_TIMEOUT);
+			usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
+			beada->cmd_buf, len, &len1, CMD_TIMEOUT);
 
 	if (ret || len1 != len) {
-			DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
-			return -EIO;
+		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
+		return -EIO;
 	}
 
-	/* Read value */
+	/* read value */
 	len += sizeof(STATUSLINK_INFO);
 	ret = usb_bulk_msg(beada->udev,
-			   usb_rcvbulkpipe(beada->udev, beada->misc_rcv_ept),
-			   beada->cmd_buf, len, &len1,
-			   DATA_TIMEOUT);
-
+			usb_rcvbulkpipe(beada->udev, beada->misc_rcv_ept),
+			beada->cmd_buf, len, &len1,
+			DATA_TIMEOUT);
 	if (ret || len1 != len) {
-			DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() read error %d\n", ret);
-			return -EIO;
+		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() read error %d\n", ret);
+		return -EIO;
 	}
 
 	HexDump(beada->cmd_buf, len, beada->cmd_buf);
+
+	/* retrive BeadaPanel device info into a local structure */
 	ret = retrivSLGetInfo(beada->cmd_buf, len, &beada->info);
 	if (ret) {
 		DRM_DEV_ERROR(&beada->udev->dev, "retrivSLGetInfo() error %d\n", ret);
@@ -242,7 +229,7 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf
 	if (ret)
 		goto err_msg;
 
-	/* send tag header if rect size changed */
+	/* send a new tag if rect size changed */
 	if (!((beada->old_rect_x1 == rect->x1) &&
 		(beada->old_rect_y1 == rect->y1) &&
 		(beada->old_rect_x2 == rect->x2) &&
@@ -444,7 +431,7 @@ static void beada_mode_config_setup(struct beada_device *beada)
 	int width, height, margin, width_mm, height_mm;
 	char *model;
 
-	switch (beada->screen) {
+	switch (beada->info.os_version) {
 	case MODEL_2:
 		model = "2";
 		width = 480;
@@ -630,15 +617,21 @@ static int beada_usb_probe(struct usb_interface *interface,
 	}
 	
 	/* Check corresponding endpoint number */
-	beada->misc_snd_ept = 4;
-	beada->misc_rcv_ept = 3;
-	beada->data_snd_ept = 2;
+	beada->misc_snd_ept = 2;
+	beada->misc_rcv_ept = 2;
+	beada->data_snd_ept = 1;
+	beada->udev = interface_to_usbdev(interface);
 
 	dev = &beada->dev;
-	beada->udev = interface_to_usbdev(interface);
 	beada->dmadev = usb_intf_get_dma_device(to_usb_interface(dev->dev));
 	if (!beada->dmadev)
 		DRM_DEV_DEBUG(&beada->udev->dev, "buffer sharing not supported"); /* not an error */
+
+	beada->cmd_buf = drmm_kmalloc(&beada->dev, CMD_SIZE, GFP_KERNEL);
+	if (!beada->cmd_buf) {
+		DRM_DEV_ERROR(&beada->udev->dev, "beada->cmd_buf init failed\n");
+		goto err_put_device;
+	}
 
 	ret = beada_misc_request(beada);
 	if (ret) {
@@ -655,9 +648,9 @@ static int beada_usb_probe(struct usb_interface *interface,
 	beada_mode_config_setup(beada);
 	beada_edid_setup(beada);
 
-	ret = beada_data_alloc(beada);
-	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "beada_data_alloc() return %d\n", ret);
+	beada->draw_buf = drmm_kmalloc(&beada->dev, beada->height * beada->width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL);
+	if (!beada->draw_buf) {
+		DRM_DEV_ERROR(&beada->udev->dev, "beada->cmd_buf init failed\n");
 		goto err_put_device;
 	}
 
