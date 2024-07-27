@@ -13,6 +13,7 @@
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_edid.h>
+#include <drm/drm_fbdev_generic.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_file.h>
 #include <drm/drm_format_helper.h>
@@ -204,12 +205,13 @@ static int beada_misc_request(struct beada_device *beada)
 static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip)
 {
 	int ret;
+	unsigned int pitch=0;
 
 	ret = drm_gem_fb_begin_cpu_access(fb, DMA_FROM_DEVICE);
 	if (ret)
 		return ret;
 
-	drm_fb_xrgb8888_to_rgb565(dst, map->vaddr, fb, clip, false);
+	drm_fb_xrgb8888_to_rgb565(dst, &pitch, map->vaddr, fb, clip, false);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
