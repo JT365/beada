@@ -213,7 +213,7 @@ static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_fra
 	if (ret)
 		return ret;
 
-	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map->vaddr, fb, clip, false);
+	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map, fb, clip, false);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
