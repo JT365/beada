@@ -201,7 +201,7 @@ static int beada_misc_request(struct beada_device *beada)
 	return 0;
 }
 
-static int beada_buf_copy(void *dst, const struct dma_buf_map *map, struct drm_framebuffer *fb, struct drm_rect *clip)
+static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip)
 {
 	int ret;
 
@@ -216,7 +216,7 @@ static int beada_buf_copy(void *dst, const struct dma_buf_map *map, struct drm_f
 	return 0;
 }
 
-static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf_map *map, struct drm_rect *rect)
+static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
 {
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
@@ -404,6 +404,22 @@ static const uint64_t beada_pipe_modifiers[] = {
 	DRM_FORMAT_MOD_INVALID
 };
 
+/*
+ * FIXME: Dma-buf sharing requires DMA support by the importing device.
+ *        This function is a workaround to make USB devices work as well.
+ *        See todo.rst for how to fix the issue in the dma-buf framework.
+ */
+static struct drm_gem_object *beada_gem_prime_import(struct drm_device *dev,
+							struct dma_buf *dma_buf)
+{
+	struct beada_device *beada = to_beada(dev);
+
+	if (!beada->dmadev)
+		return ERR_PTR(-ENODEV);
+
+	return drm_gem_prime_import_dev(dev, dma_buf, beada->dmadev);
+}
+
 DEFINE_DRM_GEM_FOPS(beada_fops);
 
 static const struct drm_driver beada_drm_driver = {
@@ -417,6 +433,7 @@ static const struct drm_driver beada_drm_driver = {
 
 	.fops		 = &beada_fops,
 	DRM_GEM_SHMEM_DRIVER_OPS,
+	.gem_prime_import = beada_gem_prime_import,
 };
 
 static const struct drm_mode_config_funcs beada_mode_config_funcs = {
@@ -711,6 +728,22 @@ static void beada_usb_disconnect(struct usb_interface *interface)
 	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_disconnect() exit\n");
 }
 
+static int beada_suspend(struct usb_interface *interface,
+			    pm_message_t message)
+{
+	struct drm_device *dev = usb_get_intfdata(interface);
+
+	return drm_mode_config_helper_suspend(dev);
+}
+
+static int beada_resume(struct usb_interface *interface)
+{
+	struct drm_device *dev = usb_get_intfdata(interface);
+	struct beada_device *beada = to_beada(dev);
+
+	return drm_mode_config_helper_resume(dev);
+}
+
 static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x4e58, 0x1001) },
 	{},
@@ -722,6 +755,9 @@ static struct usb_driver beada_usb_driver = {
 	.probe = beada_usb_probe,
 	.disconnect = beada_usb_disconnect,
 	.id_table = id_table,
+	.suspend = pm_ptr(beada_suspend),
+	.resume = pm_ptr(beada_resume),
+	.reset_resume = pm_ptr(beada_resume),
 };
 
 module_usb_driver(beada_usb_driver);
