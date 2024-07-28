@@ -77,6 +77,8 @@ struct beada_device {
 	unsigned int	height_mm;
 	unsigned char	*cmd_buf;
 	unsigned char	*draw_buf;
+	struct iosys_map dest_map;
+
 	int				old_rect_x1;
 	int				old_rect_y1;
 	int				old_rect_x2;
@@ -211,7 +213,7 @@ static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_fra
 	if (ret)
 		return ret;
 
-	drm_fb_xrgb8888_to_rgb565(dst, &pitch, map->vaddr, fb, clip, false);
+	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map->vaddr, fb, clip, false);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
@@ -227,7 +229,7 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_m
 	if (!drm_dev_enter(fb->dev, &idx))
 		return;
 
-	ret = beada_buf_copy(beada->draw_buf, map, fb, rect);
+	ret = beada_buf_copy(&beada->dest_map, map, fb, rect);
 	if (ret)
 		goto err_msg;
 
@@ -620,6 +622,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 	struct beada_device *beada;
 	struct drm_device *dev;
 	int ret;
+	unsigned char *buf;
 
 	/*
 	 * The beada presents itself to the system as 2 usb mass-storage
@@ -666,12 +669,13 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	beada_mode_config_setup(beada);
 	beada_edid_setup(beada);
-
+	
 	beada->draw_buf = drmm_kmalloc(&beada->dev, beada->height * beada->width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL);
 	if (!beada->draw_buf) {
-		DRM_DEV_ERROR(&beada->udev->dev, "beada->cmd_buf init failed\n");
+		DRM_DEV_ERROR(&beada->udev->dev, "beada->draw_buf init failed\n");
 		goto err_put_device;
 	}
+	iosys_map_set_vaddr(&beada->dest_map, beada->draw_buf);
 
 	ret = beada_conn_init(beada);
 	if (ret) {
