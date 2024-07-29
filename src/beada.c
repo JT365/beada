@@ -329,6 +329,10 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf
 	int idx, len, height, width, ret;
 	char fmtstr[256] = {0};
 
+	height = rect->y2 - rect->y1;
+	width = rect->x2 - rect->x1;
+	len = height * width * RGB565_BPP / 8;
+
 	if (!drm_dev_enter(fb->dev, &idx))
 		return;
 
@@ -342,9 +346,6 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf
 		(beada->old_rect_x2 == rect->x2) &&
 		(beada->old_rect_y2 == rect->y2)) ) {
 
-		height = rect->y2 - rect->y1;
-		width = rect->x2 - rect->x1;
-		len = height * width * RGB565_BPP / 8;
 		snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
 		ret = beada_send_tag(beada, (const char *)fmtstr);
 		if (ret < 0)
@@ -353,7 +354,7 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct dma_buf
 
 	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), beada->draw_buf,
 			    len, NULL, PANELLINK_MAX_DELAY);
-
+	
 	beada->old_rect_x1 = rect->x1;
 	beada->old_rect_y1 = rect->y1;
 	beada->old_rect_x2 = rect->x2;
