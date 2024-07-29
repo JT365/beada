@@ -36,10 +36,12 @@
 #define DRIVER_MAJOR		1
 #define DRIVER_MINOR		0
 
-#define MODEL_3			3
-#define MODEL_4			4
-#define MODEL_5			0
-#define MODEL_6			2
+
+#define MODEL_5		0
+#define MODEL_7		1
+#define MODEL_6		2
+#define MODEL_3		3
+#define MODEL_4		4
 #define MODEL_5C		10
 #define MODEL_5S		11
 #define MODEL_7C		12
@@ -47,14 +49,14 @@
 #define MODEL_4C		14
 #define MODEL_6C		15
 #define MODEL_6S		16
-#define MODEL_2			17
+#define MODEL_2		17
 #define MODEL_2W		18 
 
-#define RGB565_BPP				16
-#define CMD_TIMEOUT				msecs_to_jiffies(200)
+#define RGB565_BPP			16
+#define CMD_TIMEOUT			msecs_to_jiffies(200)
 #define DATA_TIMEOUT			msecs_to_jiffies(1000)
 #define PANELLINK_MAX_DELAY		msecs_to_jiffies(1000)
-#define CMD_SIZE				512*4
+#define CMD_SIZE			512*4
 
 struct beada_device {
 	struct drm_device				dev;
@@ -76,10 +78,11 @@ struct beada_device {
 	unsigned int	height_mm;
 	unsigned char	*cmd_buf;
 	unsigned char	*draw_buf;
-	int				old_rect_x1;
-	int				old_rect_y1;
-	int				old_rect_x2;
-	int				old_rect_y2;
+
+	int		old_rect_x1;
+	int		old_rect_y1;
+	int		old_rect_x2;
+	int		old_rect_y2;
 
 	unsigned int	misc_rcv_ept;
 	unsigned int	misc_snd_ept;
@@ -130,19 +133,19 @@ static int beada_send_tag(struct beada_device *beada, const char* cmd)
 
 	len = CMD_SIZE;
 
-    /* prepare tag header */
-	ret = fillPLStart(beada->cmd_buf, &len, cmd);	
+	/* prepare tag header */
+	ret = fillPLStart(beada->draw_buf, &len, cmd);	
 	if (ret) {
 		DRM_DEV_ERROR(&beada->udev->dev, "fillPLStart() error %d\n", ret);
 		return -EIO;
 	}
 
-	HexDump(beada->cmd_buf, len, beada->cmd_buf);
+	HexDump(beada->draw_buf, len, beada->draw_buf);
 
 	/* send request */
 	ret = usb_bulk_msg(beada->udev,
-			usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
-			beada->cmd_buf, len, &len1, CMD_TIMEOUT);
+			usb_sndbulkpipe(beada->udev, beada->data_snd_ept),
+			beada->draw_buf, len, &len1, CMD_TIMEOUT);
 
 	if (ret || len != len1) {
 		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() error %d\n", ret);
@@ -156,8 +159,10 @@ static int beada_misc_request(struct beada_device *beada)
 {
 	int ret;
 	unsigned int len, len1;
+	int width, height, margin, width_mm, height_mm;
+	char *model;
 
-    len = CMD_SIZE;
+	len = CMD_SIZE;
 
 	// prepare statuslink command
 	ret = fillSLGetInfo(beada->cmd_buf, &len);
@@ -198,6 +203,108 @@ static int beada_misc_request(struct beada_device *beada)
 		return -EIO;
 	}
 
+	switch (beada->info.os_version) {
+	case MODEL_2:
+		model = "2";
+		width = 480;
+		height = 480;
+		width_mm = 53;
+		height_mm = 53;
+		break;
+	case MODEL_2W:
+		model = "2W";
+		width = 480;
+		height = 480;
+		width_mm = 70;
+		height_mm = 70;
+		break;
+	case MODEL_3:
+		model = "3";
+		width = 480;
+		height = 320;
+		width_mm = 62;
+		height_mm = 40;
+		break;
+	case MODEL_4:
+		model = "4";
+		width = 800;
+		height = 480;
+		width_mm = 94;
+		height_mm = 56;
+		break;
+	case MODEL_3C:
+		model = "3C";
+		width = 480;
+		height = 320;
+		width_mm = 62;
+		height_mm = 40;
+		break;
+	case MODEL_4C:
+		model = "4C";
+		width = 800;
+		height = 480;
+		width_mm = 94;
+		height_mm = 56;
+		break;
+	case MODEL_5:
+		model = "5";
+		width = 800;
+		height = 480;
+		width_mm = 108;
+		height_mm = 65;
+		break;
+	case MODEL_5S:
+		model = "5S";
+		width = 800;
+		height = 480;
+		width_mm = 108;
+		height_mm = 65;
+		break;
+	case MODEL_6:
+		model = "6";
+		width = 1280;
+		height = 480;
+		width_mm = 161;
+		height_mm = 60;
+		break;
+	case MODEL_6C:
+		model = "6C";
+		width = 1280;
+		height = 480;
+		width_mm = 161;
+		height_mm = 60;
+		break;
+	case MODEL_6S:
+		model = "6S";
+		width = 1280;
+		height = 480;
+		width_mm = 161;
+		height_mm = 60;
+		break;
+	case MODEL_7C:
+		model = "7C";
+		width = 800;
+		height = 480;
+		width_mm = 62;
+		height_mm = 110;
+		break;
+	default:
+		model = "5";
+		width  = 800;
+		height = 480;
+		margin = 0;
+		width_mm = 108;
+		height_mm = 65;	
+		break;
+	}
+
+	beada->width = width;
+	beada->height = height;
+	beada->margin = margin;
+	beada->model = model;
+	beada->width_mm = width_mm;
+	beada->height_mm = height_mm;
+	
 	return 0;
 }
 
@@ -428,117 +535,12 @@ static const struct drm_mode_config_funcs beada_mode_config_funcs = {
 static void beada_mode_config_setup(struct beada_device *beada)
 {
 	struct drm_device *dev = &beada->dev;
-	int width, height, margin, width_mm, height_mm;
-	char *model;
-
-	switch (beada->info.os_version) {
-	case MODEL_2:
-		model = "2";
-		width = 480;
-		height = 480;
-		width_mm = 53;
-		height_mm = 53;
-		break;
-	case MODEL_2W:
-		model = "2W";
-		width = 480;
-		height = 480;
-		width_mm = 70;
-		height_mm = 70;
-		break;
-	case MODEL_3:
-		model = "3";
-		width = 480;
-		height = 320;
-		width_mm = 62;
-		height_mm = 40;
-		break;
-	case MODEL_4:
-		model = "4";
-		width = 800;
-		height = 480;
-		width_mm = 94;
-		height_mm = 56;
-		break;
-	case MODEL_3C:
-		model = "3C";
-		width = 480;
-		height = 320;
-		width_mm = 62;
-		height_mm = 40;
-		break;
-	case MODEL_4C:
-		model = "4C";
-		width = 800;
-		height = 480;
-		width_mm = 94;
-		height_mm = 56;
-		break;
-	case MODEL_5:
-		model = "5";
-		width = 800;
-		height = 480;
-		width_mm = 108;
-		height_mm = 65;
-		break;
-
-	case MODEL_5S:
-		model = "5S";
-		width = 800;
-		height = 480;
-		width_mm = 108;
-		height_mm = 65;
-		break;
-	case MODEL_6:
-		model = "6";
-		width = 1280;
-		height = 480;
-		width_mm = 161;
-		height_mm = 60;
-		break;
-	case MODEL_6C:
-		model = "6C";
-		width = 1280;
-		height = 480;
-		width_mm = 161;
-		height_mm = 60;
-		break;
-	case MODEL_6S:
-		model = "6S";
-		width = 1280;
-		height = 480;
-		width_mm = 161;
-		height_mm = 60;
-		break;
-	case MODEL_7C:
-		model = "7C";
-		width = 800;
-		height = 480;
-		width_mm = 62;
-		height_mm = 110;
-		break;
-	default:
-		model = "5";
-		width  = 800;
-		height = 4800;
-		margin = 0;
-		width_mm = 108;
-		height_mm = 65;	
-		break;
-	}
-
-	beada->width = width;
-	beada->height = height;
-	beada->margin = margin;
-	beada->model = model;
-	beada->width_mm = width_mm;
-	beada->height_mm = height_mm;
 
 	dev->mode_config.funcs = &beada_mode_config_funcs;
-	dev->mode_config.min_width = width;
-	dev->mode_config.max_width = width;
-	dev->mode_config.min_height = height;
-	dev->mode_config.max_height = height;
+	dev->mode_config.min_width = beada->width;
+	dev->mode_config.max_width = beada->width;
+	dev->mode_config.min_height = beada->height;
+	dev->mode_config.max_height = beada->height;
 }
 
 static int beada_edid_block_checksum(u8 *raw_edid)
