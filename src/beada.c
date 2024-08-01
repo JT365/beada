@@ -80,11 +80,7 @@ struct beada_device {
 	unsigned char	*cmd_buf;
 	unsigned char	*draw_buf;
 	struct iosys_map dest_map;
-
-	int		old_rect_x1;
-	int		old_rect_y1;
-	int		old_rect_x2;
-	int		old_rect_y2;
+	struct drm_rect old_rect;
 
 	unsigned int	misc_rcv_ept;
 	unsigned int	misc_snd_ept;
@@ -165,6 +161,7 @@ static int beada_misc_request(struct beada_device *beada)
 	char *model;
 
 	len = CMD_SIZE;
+	margin = 0;
 
 	// prepare statuslink command
 	ret = fillSLGetInfo(beada->cmd_buf, &len);
@@ -344,10 +341,10 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_m
 		goto err_msg;
 
 	/* send a new tag if rect size changed */
-	if (!((beada->old_rect_x1 == rect->x1) &&
-		(beada->old_rect_y1 == rect->y1) &&
-		(beada->old_rect_x2 == rect->x2) &&
-		(beada->old_rect_y2 == rect->y2)) ) {
+	if (!((beada->old_rect.x1 == rect->x1) &&
+		(beada->old_rect.y1 == rect->y1) &&
+		(beada->old_rect.x2 == rect->x2) &&
+		(beada->old_rect.y2 == rect->y2)) ) {
 
 		snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
 		ret = beada_send_tag(beada, (const char *)fmtstr);
@@ -358,10 +355,10 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_m
 	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), beada->draw_buf,
 			    len, NULL, PANELLINK_MAX_DELAY);
 	
-	beada->old_rect_x1 = rect->x1;
-	beada->old_rect_y1 = rect->y1;
-	beada->old_rect_x2 = rect->x2;
-	beada->old_rect_y2 = rect->y2;
+	beada->old_rect.x1 = rect->x1;
+	beada->old_rect.y1 = rect->y1;
+	beada->old_rect.x2 = rect->x2;
+	beada->old_rect.y2 = rect->y2;
 
 err_msg:
 	if (ret)
@@ -375,13 +372,13 @@ static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
 	char fmtstr[256] = {0};
-	struct drm_rect rect_form;
+	struct drm_rect form = {
+		.x1 = 0,
+		.x2 = beada->width,
+		.y1 = 0,
+		.y2 = beada->height,
+	};
 
-	rect_form.x1 = 0;
-	rect_form.y1 = 0;
-	rect_form.x2 = beada->width;
-	rect_form.y2 = beada->height;
-	
 	height = beada->height;
 	width = beada->width;
 	len = height * width * RGB565_BPP / 8;
@@ -389,33 +386,38 @@ static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys
 	if (!drm_dev_enter(fb->dev, &idx))
 		return;
 
-	ret = beada_buf_copy(&beada->dest_map, map, fb, &rect_form);
+	ret = beada_buf_copy(&beada->dest_map, map, fb, &form);
 	if (ret)
 		goto err_msg;
 
 	/* send a new tag if rect size changed */
-	if (!((beada->old_rect_x1 == rect->x1) &&
-		(beada->old_rect_y1 == rect->y1) &&
-		(beada->old_rect_x2 == rect->x2) &&
-		(beada->old_rect_y2 == rect->y2)) ) {
+	if (((beada->old_rect.x1 == 0) &&
+		(beada->old_rect.y1 == 0) &&
+		(beada->old_rect.x2 == 0) &&
+		(beada->old_rect.y2 == 0)) ) {
 
 		snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
 		ret = beada_send_tag(beada, (const char *)fmtstr);
 		if (ret < 0)
 			goto err_msg;
 		
-		beada->old_rect_x1 = rect->x1;
-		beada->old_rect_y1 = rect->y1;
-		beada->old_rect_x2 = rect->x2;
-		beada->old_rect_y2 = rect->y2;
+		beada->old_rect.x1 = 0;
+		beada->old_rect.y1 = 0;
+		beada->old_rect.x2 = width;
+		beada->old_rect.y2 = height;
 	}
 
 	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), beada->draw_buf,
 			    len, NULL, PANELLINK_MAX_DELAY);
 	
 err_msg:
-	if (ret)
+	if (ret) {
+		beada->old_rect.x1 = 0;
+		beada->old_rect.y1 = 0;
+		beada->old_rect.x2 = 0;
+		beada->old_rect.y2 = 0;
 		dev_err_once(fb->dev->dev, "Failed to update display %d\n", ret);
+	}
 
 	drm_dev_exit(idx);
 }
@@ -726,6 +728,11 @@ static int beada_usb_probe(struct usb_interface *interface,
 		DRM_DEV_ERROR(&beada->udev->dev, "beada->draw_buf init failed\n");
 		goto err_put_device;
 	}
+
+	beada->old_rect.x1 = 0;
+	beada->old_rect.y1 = 0;
+	beada->old_rect.x2 = 0;
+	beada->old_rect.y2 = 0;
 	iosys_map_set_vaddr(&beada->dest_map, beada->draw_buf);
 
 	ret = beada_conn_init(beada);
