@@ -513,7 +513,6 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 				 struct drm_crtc_state *crtc_state,
 				 struct drm_plane_state *plane_state)
 {
-	struct beada_device *beada = to_beada(pipe->crtc.dev);
 	struct drm_shadow_plane_state *shadow_plane_state = to_drm_shadow_plane_state(plane_state);
 	struct drm_framebuffer *fb = plane_state->fb;
 	struct drm_rect rect = {
@@ -801,7 +800,6 @@ static int beada_suspend(struct usb_interface *interface,
 static int beada_resume(struct usb_interface *interface)
 {
 	struct drm_device *dev = usb_get_intfdata(interface);
-	struct beada_device *beada = to_beada(dev);
 
 	return drm_mode_config_helper_resume(dev);
 }
