@@ -763,6 +763,8 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	drm_fbdev_generic_setup(dev, 0);
 
+	DRM_DEV_INFO(&beada->udev->dev, "BeadaPanel %s detected\n", beada->model);
+
 	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_probe() exit\n");
 	return ret;
 
