@@ -74,7 +74,6 @@ struct beada_device {
 
 	unsigned int	width;
 	unsigned int	height;
-	unsigned int	margin;
 	unsigned int	width_mm;
 	unsigned int	height_mm;
 	unsigned char	*cmd_buf;
@@ -157,11 +156,10 @@ static int beada_misc_request(struct beada_device *beada)
 {
 	int ret;
 	unsigned int len, len1;
-	int width, height, margin, width_mm, height_mm;
+	int width, height, width_mm, height_mm;
 	char *model;
 
 	len = CMD_SIZE;
-	margin = 0;
 
 	// prepare statuslink command
 	ret = fillSLGetInfo(beada->cmd_buf, &len);
@@ -291,7 +289,6 @@ static int beada_misc_request(struct beada_device *beada)
 		model = "5";
 		width  = 800;
 		height = 480;
-		margin = 0;
 		width_mm = 108;
 		height_mm = 65;	
 		break;
@@ -299,7 +296,6 @@ static int beada_misc_request(struct beada_device *beada)
 
 	beada->width = width;
 	beada->height = height;
-	beada->margin = margin;
 	beada->model = model;
 	beada->width_mm = width_mm;
 	beada->height_mm = height_mm;
@@ -723,7 +719,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 	beada_mode_config_setup(beada);
 	beada_edid_setup(beada);
 	
-	beada->draw_buf = drmm_kmalloc(&beada->dev, beada->height * beada->width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL);
+	beada->draw_buf = drmm_kmalloc(&beada->dev, beada->height * beada->width * RGB565_BPP / 8, GFP_KERNEL);
 	if (!beada->draw_buf) {
 		DRM_DEV_ERROR(&beada->udev->dev, "beada->draw_buf init failed\n");
 		goto err_put_device;
