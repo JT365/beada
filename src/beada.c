@@ -324,50 +324,6 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_m
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
 	char fmtstr[256] = {0};
-
-	height = rect->y2 - rect->y1;
-	width = rect->x2 - rect->x1;
-	len = height * width * RGB565_BPP / 8;
-
-	if (!drm_dev_enter(fb->dev, &idx))
-		return;
-
-	ret = beada_buf_copy(&beada->dest_map, map, fb, rect);
-	if (ret)
-		goto err_msg;
-
-	/* send a new tag if rect size changed */
-	if (!((beada->old_rect.x1 == rect->x1) &&
-		(beada->old_rect.y1 == rect->y1) &&
-		(beada->old_rect.x2 == rect->x2) &&
-		(beada->old_rect.y2 == rect->y2)) ) {
-
-		snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
-		ret = beada_send_tag(beada, (const char *)fmtstr);
-		if (ret < 0)
-			goto err_msg;
-	}
-
-	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), beada->draw_buf,
-			    len, NULL, PANELLINK_MAX_DELAY);
-	
-	beada->old_rect.x1 = rect->x1;
-	beada->old_rect.y1 = rect->y1;
-	beada->old_rect.x2 = rect->x2;
-	beada->old_rect.y2 = rect->y2;
-
-err_msg:
-	if (ret)
-		dev_err_once(fb->dev->dev, "Failed to update display %d\n", ret);
-
-	drm_dev_exit(idx);
-}
-
-static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
-{
-	struct beada_device *beada = to_beada(fb->dev);
-	int idx, len, height, width, ret;
-	char fmtstr[256] = {0};
 	struct drm_rect form = {
 		.x1 = 0,
 		.x2 = beada->width,
@@ -522,7 +478,7 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 		.y2 = fb->height,
 	};
 
-	beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect);
+	beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect);
 }
 
 static void beada_pipe_disable(struct drm_simple_display_pipe *pipe)
@@ -543,7 +499,7 @@ static void beada_pipe_update(struct drm_simple_display_pipe *pipe,
 		return;
 
 	if (drm_atomic_helper_damage_merged(old_state, state, &rect))
-		beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect);
+		beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect);
 }
 
 static const struct drm_simple_display_pipe_funcs beada_pipe_funcs = {
