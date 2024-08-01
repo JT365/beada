@@ -94,7 +94,7 @@ void HexDump(unsigned char *buf, int len, unsigned char *addr) {
 
 	for (i = 0; i < len; i++) {
 		if (0 == (i % 16)) {
-			sprintf(binstr, "%08x -", i + (int)addr);
+			sprintf(binstr, "%08x -", i + (int)*(unsigned char *)addr);
 			sprintf(binstr, "%s %02x", binstr, (unsigned char)buf[i]);
 		}
 		else if (15 == (i % 16)) {
