@@ -596,7 +596,7 @@ static const struct drm_driver beada_drm_driver = {
 
 	.fops		 = &beada_fops,
 	DRM_GEM_SHMEM_DRIVER_OPS,
-	.gem_prime_import = beada_gem_prime_import,
+//.gem_prime_import = beada_gem_prime_import,
 };
 
 static const struct drm_mode_config_funcs beada_mode_config_funcs = {
