@@ -56,7 +56,7 @@
 #define RGB565_BPP			16
 #define CMD_TIMEOUT			msecs_to_jiffies(200)
 #define DATA_TIMEOUT			msecs_to_jiffies(1000)
-#define PANELLINK_MAX_DELAY		msecs_to_jiffies(2000)
+#define PANELLINK_MAX_DELAY		msecs_to_jiffies(2500)
 #define CMD_SIZE			512*4
 
 struct beada_device {
