@@ -219,17 +219,17 @@ static int beada_misc_request(struct beada_device *beada)
 		break;
 	case MODEL_3:
 		model = "3";
-		width = 480;
-		height = 320;
-		width_mm = 62;
-		height_mm = 40;
+		height = 480;
+		width = 320;
+		height_mm = 62;
+		width_mm = 40;
 		break;
 	case MODEL_4:
 		model = "4";
-		width = 800;
-		height = 480;
-		width_mm = 94;
-		height_mm = 56;
+		height = 800;
+		width = 480;
+		height_mm = 94;
+		width_mm = 56;
 		break;
 	case MODEL_3C:
 		model = "3C";
@@ -261,10 +261,10 @@ static int beada_misc_request(struct beada_device *beada)
 		break;
 	case MODEL_6:
 		model = "6";
-		width = 1280;
-		height = 480;
-		width_mm = 161;
-		height_mm = 60;
+		height = 1280;
+		width = 480;
+		height_mm = 161;
+		width_mm = 60;
 		break;
 	case MODEL_6C:
 		model = "6C";
@@ -396,7 +396,7 @@ static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys
 		(beada->old_rect.x2 == 0) &&
 		(beada->old_rect.y2 == 0)) ) {
 
-		snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
+		snprintf(fmtstr, sizeof(fmtstr), "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
 		ret = beada_send_tag(beada, (const char *)fmtstr);
 		if (ret < 0)
 			goto err_msg;
@@ -596,7 +596,7 @@ static const struct drm_driver beada_drm_driver = {
 
 	.fops		 = &beada_fops,
 	DRM_GEM_SHMEM_DRIVER_OPS,
-//.gem_prime_import = beada_gem_prime_import,
+	.gem_prime_import = beada_gem_prime_import,
 };
 
 static const struct drm_mode_config_funcs beada_mode_config_funcs = {
