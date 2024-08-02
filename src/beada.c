@@ -56,8 +56,12 @@
 #define RGB565_BPP			16
 #define CMD_TIMEOUT			msecs_to_jiffies(200)
 #define DATA_TIMEOUT			msecs_to_jiffies(1000)
-#define PANELLINK_MAX_DELAY		msecs_to_jiffies(2000)
+#define PANELLINK_MAX_DELAY		msecs_to_jiffies(2500)
 #define CMD_SIZE			512*4
+
+static int landscape = 0;
+module_param(landscape, int, 0660);
+MODULE_PARM_DESC(landscape, "enable landscape mode by setting this value to 1");
 
 struct beada_device {
 	struct drm_device				dev;
@@ -74,7 +78,6 @@ struct beada_device {
 
 	unsigned int	width;
 	unsigned int	height;
-	unsigned int	margin;
 	unsigned int	width_mm;
 	unsigned int	height_mm;
 	unsigned char	*cmd_buf;
@@ -85,6 +88,8 @@ struct beada_device {
 	unsigned int	misc_rcv_ept;
 	unsigned int	misc_snd_ept;
 	unsigned int	data_snd_ept;
+
+	bool		landscape;
 };
 
 #define to_beada(__dev) container_of(__dev, struct beada_device, dev)
@@ -95,7 +100,7 @@ void HexDump(unsigned char *buf, int len, unsigned char *addr) {
 
 	for (i = 0; i < len; i++) {
 		if (0 == (i % 16)) {
-			sprintf(binstr, "%08x -", i + (int)addr);
+			sprintf(binstr, "%08x -", i + (int)*(unsigned char *)addr);
 			sprintf(binstr, "%s %02x", binstr, (unsigned char)buf[i]);
 		}
 		else if (15 == (i % 16)) {
@@ -157,11 +162,10 @@ static int beada_misc_request(struct beada_device *beada)
 {
 	int ret;
 	unsigned int len, len1;
-	int width, height, margin, width_mm, height_mm;
+	int width, height, width_mm, height_mm;
 	char *model;
 
 	len = CMD_SIZE;
-	margin = 0;
 
 	// prepare statuslink command
 	ret = fillSLGetInfo(beada->cmd_buf, &len);
@@ -291,18 +295,16 @@ static int beada_misc_request(struct beada_device *beada)
 		model = "5";
 		width  = 800;
 		height = 480;
-		margin = 0;
 		width_mm = 108;
 		height_mm = 65;	
 		break;
 	}
 
-	beada->width = width;
-	beada->height = height;
-	beada->margin = margin;
+	beada->width = beada->landscape ? height : width;
+	beada->height = beada->landscape ? width : height;
 	beada->model = model;
-	beada->width_mm = width_mm;
-	beada->height_mm = height_mm;
+	beada->width_mm = beada->landscape ? height_mm : width_mm;
+	beada->height_mm = beada->landscape ? width_mm : height_mm;
 	
 	return 0;
 }
@@ -324,50 +326,6 @@ static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_fra
 }
 
 static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
-{
-	struct beada_device *beada = to_beada(fb->dev);
-	int idx, len, height, width, ret;
-	char fmtstr[256] = {0};
-
-	height = rect->y2 - rect->y1;
-	width = rect->x2 - rect->x1;
-	len = height * width * RGB565_BPP / 8;
-
-	if (!drm_dev_enter(fb->dev, &idx))
-		return;
-
-	ret = beada_buf_copy(&beada->dest_map, map, fb, rect);
-	if (ret)
-		goto err_msg;
-
-	/* send a new tag if rect size changed */
-	if (!((beada->old_rect.x1 == rect->x1) &&
-		(beada->old_rect.y1 == rect->y1) &&
-		(beada->old_rect.x2 == rect->x2) &&
-		(beada->old_rect.y2 == rect->y2)) ) {
-
-		snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
-		ret = beada_send_tag(beada, (const char *)fmtstr);
-		if (ret < 0)
-			goto err_msg;
-	}
-
-	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), beada->draw_buf,
-			    len, NULL, PANELLINK_MAX_DELAY);
-	
-	beada->old_rect.x1 = rect->x1;
-	beada->old_rect.y1 = rect->y1;
-	beada->old_rect.x2 = rect->x2;
-	beada->old_rect.y2 = rect->y2;
-
-err_msg:
-	if (ret)
-		dev_err_once(fb->dev->dev, "Failed to update display %d\n", ret);
-
-	drm_dev_exit(idx);
-}
-
-static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
 {
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
@@ -396,6 +354,7 @@ static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys
 		(beada->old_rect.x2 == 0) &&
 		(beada->old_rect.y2 == 0)) ) {
 
+		//snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
 		snprintf(fmtstr, sizeof(fmtstr), "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
 		ret = beada_send_tag(beada, (const char *)fmtstr);
 		if (ret < 0)
@@ -517,7 +476,7 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 				 struct drm_crtc_state *crtc_state,
 				 struct drm_plane_state *plane_state)
 {
-	struct beada_device *beada = to_beada(pipe->crtc.dev);
+	struct beada_device *beada = to_beada(fb->dev);
 	struct drm_shadow_plane_state *shadow_plane_state = to_drm_shadow_plane_state(plane_state);
 	struct drm_framebuffer *fb = plane_state->fb;
 	struct drm_rect rect = {
@@ -527,7 +486,9 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 		.y2 = fb->height,
 	};
 
-	beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect);
+	pipe->crtc.rotation = beada->landscape ? DRM_MODE_ROTATE_90 : DRM_MODE_ROTATE_0;
+
+	beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect);
 }
 
 static void beada_pipe_disable(struct drm_simple_display_pipe *pipe)
@@ -548,7 +509,7 @@ static void beada_pipe_update(struct drm_simple_display_pipe *pipe,
 		return;
 
 	if (drm_atomic_helper_damage_merged(old_state, state, &rect))
-		beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect);
+		beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect);
 }
 
 static const struct drm_simple_display_pipe_funcs beada_pipe_funcs = {
@@ -669,6 +630,54 @@ static void beada_edid_setup(struct beada_device *beada)
 	beada_edid.checksum = beada_edid_block_checksum((u8*)&beada_edid);
 }
 
+static ssize_t landscape_get(struct device* dev, struct device_attribute *attr, char *buf) {
+
+	struct beada_device *beada = dev_get_drvdata(dev);
+
+	return sprintf(buf, beada->landscape ? "true\n" : "false\n");
+}
+
+static struct device_attribute landscape_attr = {
+	.attr = {
+		.name = "landscape",
+		.mode = S_IWUSR | S_IRUGO,
+	},
+	.show = landscape_get,
+};
+
+static ssize_t model_get(struct device* dev, struct device_attribute *attr, char *buf) {
+
+	struct beada_device *beada = dev_get_drvdata(dev);
+
+	return sprintf(buf, "BeadaPanel %s\n", beada->model);
+}
+
+static struct device_attribute model_attr = {
+	.attr = {
+		.name = "model",
+		.mode = S_IWUSR | S_IRUGO,
+	},
+	.show = model_get,
+};
+
+
+static int beada_sysfs_create(struct beada_device *beada)
+{
+	int ret;
+
+	ret = sysfs_create_file(&beada -> dev.dev -> kobj, &landscape_attr.attr);
+	if (ret)
+		return ret;
+
+	ret = sysfs_create_file(&beada -> dev.dev -> kobj, &model_attr.attr);
+	return ret;
+}
+
+static void beada_sysfs_remove(struct beada_device *beada)
+{
+	sysfs_remove_file(&beada -> dev.dev -> kobj, &landscape_attr.attr);
+	sysfs_remove_file(&beada -> dev.dev -> kobj, &model_attr.attr);
+}
 
 static int beada_usb_probe(struct usb_interface *interface,
 			  const struct usb_device_id *id)
@@ -691,6 +700,8 @@ static int beada_usb_probe(struct usb_interface *interface,
 		return PTR_ERR(beada);
 	}
 	
+	beada->landscape = landscape == 0 ? false : true;
+
 	/* Check corresponding endpoint number */
 	beada->misc_snd_ept = 2;
 	beada->misc_rcv_ept = 2;
@@ -723,7 +734,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 	beada_mode_config_setup(beada);
 	beada_edid_setup(beada);
 	
-	beada->draw_buf = drmm_kmalloc(&beada->dev, beada->height * beada->width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL);
+	beada->draw_buf = drmm_kmalloc(&beada->dev, beada->height * beada->width * RGB565_BPP / 8, GFP_KERNEL);
 	if (!beada->draw_buf) {
 		DRM_DEV_ERROR(&beada->udev->dev, "beada->draw_buf init failed\n");
 		goto err_put_device;
@@ -767,6 +778,12 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	drm_fbdev_generic_setup(dev, 0);
 
+	ret = beada_sysfs_create(beada);
+	if (ret)
+		DRM_DEV_ERROR(beada->dev.dev, "sysfs_create_file() return %d\n", ret);
+
+	DRM_DEV_INFO(&beada->udev->dev, "BeadaPanel %s detected, %s mode\n", beada->model, beada->landscape ? "landscape" : "portrait");
+
 	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_probe() exit\n");
 	return ret;
 
@@ -783,6 +800,8 @@ static void beada_usb_disconnect(struct usb_interface *interface)
 	struct beada_device *beada = to_beada(dev);
 
 	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_disconnect() enter\n");
+
+	beada_sysfs_remove(beada);
 
 	put_device(beada->dmadev);
 	beada->dmadev = NULL;
@@ -803,7 +822,6 @@ static int beada_suspend(struct usb_interface *interface,
 static int beada_resume(struct usb_interface *interface)
 {
 	struct drm_device *dev = usb_get_intfdata(interface);
-	struct beada_device *beada = to_beada(dev);
 
 	return drm_mode_config_helper_resume(dev);
 }
