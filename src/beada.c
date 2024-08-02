@@ -307,7 +307,7 @@ static int beada_misc_request(struct beada_device *beada)
 	return 0;
 }
 
-static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip)
+static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip, struct drm_format_conv_state *fmtcnv_state)
 {
 	int ret;
 	unsigned int pitch=0;
@@ -316,14 +316,14 @@ static int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_fra
 	if (ret)
 		return ret;
 
-	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map, fb, clip, false);
+	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map, fb, clip, fmtcnv_state, false);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
 	return 0;
 }
 
-static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
+static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect, struct drm_format_conv_state *fmtcnv_state )
 {
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
@@ -336,7 +336,7 @@ static void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_m
 	if (!drm_dev_enter(fb->dev, &idx))
 		return;
 
-	ret = beada_buf_copy(&beada->dest_map, map, fb, rect);
+	ret = beada_buf_copy(&beada->dest_map, map, fb, rect, fmtcnv_state);
 	if (ret)
 		goto err_msg;
 
@@ -367,7 +367,7 @@ err_msg:
 	drm_dev_exit(idx);
 }
 
-static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
+static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect, struct drm_format_conv_state *fmtcnv_state)
 {
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
@@ -386,7 +386,7 @@ static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys
 	if (!drm_dev_enter(fb->dev, &idx))
 		return;
 
-	ret = beada_buf_copy(&beada->dest_map, map, fb, &form);
+	ret = beada_buf_copy(&beada->dest_map, map, fb, &form, fmtcnv_state);
 	if (ret)
 		goto err_msg;
 
@@ -527,7 +527,7 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 		.y2 = fb->height,
 	};
 
-	beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect);
+	beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect, &shadow_plane_state->fmtcnv_state);
 }
 
 static void beada_pipe_disable(struct drm_simple_display_pipe *pipe)
@@ -548,7 +548,7 @@ static void beada_pipe_update(struct drm_simple_display_pipe *pipe,
 		return;
 
 	if (drm_atomic_helper_damage_merged(old_state, state, &rect))
-		beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect);
+		beada_fb_mark_dirty_1(fb, &shadow_plane_state->data[0], &rect, &shadow_plane_state->fmtcnv_state);
 }
 
 static const struct drm_simple_display_pipe_funcs beada_pipe_funcs = {
