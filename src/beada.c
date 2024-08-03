@@ -367,7 +367,7 @@ err_msg:
 	drm_dev_exit(idx);
 }
 
-static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
+static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct dma_buf_map *map, struct drm_rect *rect)
 {
 	struct beada_device *beada = to_beada(fb->dev);
 	int idx, len, height, width, ret;
@@ -386,7 +386,7 @@ static void beada_fb_mark_dirty_1(struct drm_framebuffer *fb, const struct iosys
 	if (!drm_dev_enter(fb->dev, &idx))
 		return;
 
-	ret = beada_buf_copy(&beada->dest_map, map, fb, &rect_form);
+	ret = beada_buf_copy(beada->draw_buf, map, fb, &rect_form);
 	if (ret)
 		goto err_msg;
 
