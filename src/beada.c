@@ -72,8 +72,9 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 
 static void beada_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
-	//struct beada_device *beada = to_beada(pipe->crtc.dev);
+	struct beada_device *beada = to_beada(pipe->crtc.dev);
 
+	beada_stop_fb_update(beada);
 }
 
 static void beada_pipe_update(struct drm_simple_display_pipe *pipe,
@@ -177,10 +178,6 @@ static int beada_usb_probe(struct usb_interface *interface,
 		return PTR_ERR(beada);
 	}
 	
-	/* Check corresponding endpoint number */
-	beada->misc_snd_ept = 2;
-	beada->misc_rcv_ept = 2;
-	beada->data_snd_ept = 1;
 	beada->udev = interface_to_usbdev(interface);
 
 	dev = &beada->dev;

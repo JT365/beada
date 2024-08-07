@@ -103,6 +103,11 @@ int beada_misc_request(struct beada_device *beada)
 	int width, height, margin, width_mm, height_mm;
 	char *model;
 
+	/* Check corresponding endpoint number */
+	beada->misc_snd_ept = 2;
+	beada->misc_rcv_ept = 2;
+	beada->data_snd_ept = 1;
+
 	beada->cmd_buf = drmm_kmalloc(&beada->dev, CMD_SIZE, GFP_KERNEL);
 	if (!beada->cmd_buf) {
 		DRM_DEV_ERROR(&beada->udev->dev, "beada->cmd_buf init failed\n");
@@ -407,7 +412,7 @@ void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map
 
 	for (int i = 0; i < TRANSMITTER_NUM; i++) {
 		trans = &beada->trans[i];
-		if (trans->state != TRANSMITTER_STAT_BUSY) {
+		if (trans->state == TRANSMITTER_STAT_IDLE) {
 			ret = beada_buf_copy(&trans->dest_map, map, fb, &form);
 			if (!ret) {
 				queue_delayed_work(system_long_wq, &trans->work, 0);		
@@ -423,6 +428,13 @@ err_msg:
 	}
 
 	drm_dev_exit(idx);
+}
+
+void beada_stop_fb_update(struct beada_device *beada)
+{
+	for (int i = 0; i < TRANSMITTER_NUM; i++) {
+		cancel_delayed_work_sync(&beada->trans[i].work);
+	}
 }
 
 int beada_edid_block_checksum(u8 *raw_edid)

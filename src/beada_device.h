@@ -82,6 +82,7 @@ int beada_edid_block_checksum(u8 *raw_edid);
 void beada_edid_setup(struct beada_device *beada);
 int beada_transmitter_init(struct beada_device *beada);
 void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect);
+void beada_stop_fb_update(struct beada_device *beada);
 
 #endif /* _BEADA_DEVICE_H_ */
 
