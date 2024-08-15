@@ -46,6 +46,7 @@ struct transmitter {
 
 struct beada_device {
 	struct drm_device				dev;
+	struct backlight_device         *bl_dev;
 	struct drm_simple_display_pipe	pipe;
 	struct drm_connector			conn;
 	struct usb_device				*udev;
@@ -83,6 +84,7 @@ void beada_edid_setup(struct beada_device *beada);
 int beada_transmitter_init(struct beada_device *beada);
 void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect);
 void beada_stop_fb_update(struct beada_device *beada);
+int beada_set_backlight(struct beada_device *beada, int val);
 
 #endif /* _BEADA_DEVICE_H_ */
 

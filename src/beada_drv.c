@@ -38,12 +38,54 @@ static const struct drm_connector_helper_funcs beada_conn_helper_funcs = {
 	.get_modes = beada_conn_get_modes,
 };
 
+static int beada_backlight_update_status(struct backlight_device *bd)
+{
+	struct beada_device *beada = bl_get_data(bd);
+	int brightness = backlight_get_brightness(bd);
+
+	return beada_set_backlight(beada, brightness);
+}
+
+static const struct backlight_ops beada_bl_ops = {
+	.update_status = beada_backlight_update_status,
+};
+
+static int beada_conn_late_register(struct drm_connector *connector)
+{
+	struct beada_device *beada = to_beada(connector->dev);
+	struct backlight_device *bl;
+
+	bl = backlight_device_register("backlight",
+					connector->kdev, beada,
+					&beada_bl_ops, NULL);
+	if (IS_ERR(bl)) {
+		drm_err(connector->dev, "Unable to register backlight device\n");
+		return -EIO;
+	}
+
+	bl->props.max_brightness = beada->info.max_brightness;
+	bl->props.brightness = beada->info.current_brightness;
+	beada->bl_dev = bl;
+
+	return 0;
+}
+
+static void beada_conn_early_unregister(struct drm_connector *connector)
+{
+	struct beada_device *beada = to_beada(connector->dev);
+
+	if (beada->bl_dev)
+		backlight_device_unregister(beada->bl_dev);
+}
+
 static const struct drm_connector_funcs beada_conn_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = drm_connector_cleanup,
 	.reset = drm_atomic_helper_connector_reset,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+	.late_register = beada_conn_late_register,
+	.early_unregister = beada_conn_early_unregister,
 };
 
 static int beada_conn_init(struct beada_device *beada)

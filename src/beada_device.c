@@ -521,3 +521,15 @@ int beada_transmitter_init(struct beada_device *beada)
 
 	return 0;
 }
+
+int beada_set_backlight(struct beada_device *beada, int val)
+{
+	int ret;
+
+	cmd_set_brightness[6] = val & 0xff;
+	ret = mpro_send_command(mpro, cmd_set_brightness, sizeof(cmd_set_brightness));
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
