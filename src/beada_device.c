@@ -326,6 +326,69 @@ err_msg:
 /* ------------------------------------------------------------------ */
 /* beada connector						      */
 
+int beada_conn_get_modes(struct drm_connector *connector)
+{
+	struct beada_device *beada = to_beada(connector->dev);
+
+	drm_connector_update_edid_property(connector, &beada->s_edid);
+	return drm_add_edid_modes(connector, &beada->s_edid);
+}
+
+void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
+{
+	struct beada_device *beada = to_beada(fb->dev);
+	struct transmitter *trans;
+	int idx, ret;
+	struct drm_rect form = {
+		.x1 = 0,
+		.x2 = beada->width,
+		.y1 = 0,
+		.y2 = beada->height,
+	};
+
+	if (!drm_dev_enter(fb->dev, &idx))
+		return;
+
+	for (int i = 0; i < TRANSMITTER_NUM; i++) {
+		trans = &beada->trans[i];
+		if (trans->state == TRANSMITTER_STAT_IDLE) {
+			ret = beada_buf_copy(&trans->dest_map, map, fb, &form);
+			if (!ret) {
+				queue_delayed_work(system_long_wq, &trans->work, 0);		
+				trans->state = TRANSMITTER_STAT_BUSY;
+			}
+			goto err_msg;
+		}
+	}
+
+err_msg:
+	if (ret) {
+		dev_err_once(&beada->udev->dev, "Failed to update display %d\n", ret);
+	}
+
+	drm_dev_exit(idx);
+}
+
+void beada_stop_fb_update(struct beada_device *beada)
+{
+	for (int i = 0; i < TRANSMITTER_NUM; i++) {
+		cancel_delayed_work_sync(&beada->trans[i].work);
+	}
+}
+
+int beada_edid_block_checksum(u8 *raw_edid)
+{
+	int i;
+	u8 csum = 0, crc = 0;
+
+	for (i = 0; i < EDID_LENGTH - 1; i++)
+		csum += raw_edid[i];
+
+	crc = 0x100 - csum;
+
+	return crc;
+}
+
 /*
  * We use fake EDID info so that userspace know that it is dealing with
  * an Acer projector, rather then listing this as an "unknown" monitor.
@@ -389,105 +452,46 @@ static struct edid beada_edid = {
 	.checksum = 0x13,
 };
 
-int beada_conn_get_modes(struct drm_connector *connector)
-{
-	drm_connector_update_edid_property(connector, &beada_edid);
-	return drm_add_edid_modes(connector, &beada_edid);
-}
-
-void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
-{
-	struct beada_device *beada = to_beada(fb->dev);
-	struct transmitter *trans;
-	int idx, ret;
-	struct drm_rect form = {
-		.x1 = 0,
-		.x2 = beada->width,
-		.y1 = 0,
-		.y2 = beada->height,
-	};
-
-	if (!drm_dev_enter(fb->dev, &idx))
-		return;
-
-	for (int i = 0; i < TRANSMITTER_NUM; i++) {
-		trans = &beada->trans[i];
-		if (trans->state == TRANSMITTER_STAT_IDLE) {
-			ret = beada_buf_copy(&trans->dest_map, map, fb, &form);
-			if (!ret) {
-				queue_delayed_work(system_long_wq, &trans->work, 0);		
-				trans->state = TRANSMITTER_STAT_BUSY;
-			}
-			goto err_msg;
-		}
-	}
-
-err_msg:
-	if (ret) {
-		dev_err_once(&beada->udev->dev, "Failed to update display %d\n", ret);
-	}
-
-	drm_dev_exit(idx);
-}
-
-void beada_stop_fb_update(struct beada_device *beada)
-{
-	for (int i = 0; i < TRANSMITTER_NUM; i++) {
-		cancel_delayed_work_sync(&beada->trans[i].work);
-	}
-}
-
-int beada_edid_block_checksum(u8 *raw_edid)
-{
-	int i;
-	u8 csum = 0, crc = 0;
-
-	for (i = 0; i < EDID_LENGTH - 1; i++)
-		csum += raw_edid[i];
-
-	crc = 0x100 - csum;
-
-	return crc;
-}
-
 void beada_edid_setup(struct beada_device *beada)
 {
 	unsigned int width, height, width_mm, height_mm;
 	char buf[16];
+
+	beada->s_edid = beada_edid;
 
 	width = beada->width;
 	height = beada->height;
 	width_mm = beada->width_mm;
 	height_mm = beada->height_mm;
 
-	beada_edid.detailed_timings[0].data.pixel_data.hactive_lo = width % 256;
-	beada_edid.detailed_timings[0].data.pixel_data.hactive_hblank_hi &= 0x0f;
-	beada_edid.detailed_timings[0].data.pixel_data.hactive_hblank_hi |= \
+	beada->s_edid.detailed_timings[0].data.pixel_data.hactive_lo = width % 256;
+	beada->s_edid.detailed_timings[0].data.pixel_data.hactive_hblank_hi &= 0x0f;
+	beada->s_edid.detailed_timings[0].data.pixel_data.hactive_hblank_hi |= \
 						((u8)(width / 256) << 4);
 
-	beada_edid.detailed_timings[0].data.pixel_data.vactive_lo = height % 256;
-	beada_edid.detailed_timings[0].data.pixel_data.vactive_vblank_hi &= 0x0f;
-	beada_edid.detailed_timings[0].data.pixel_data.vactive_vblank_hi |= \
+	beada->s_edid.detailed_timings[0].data.pixel_data.vactive_lo = height % 256;
+	beada->s_edid.detailed_timings[0].data.pixel_data.vactive_vblank_hi &= 0x0f;
+	beada->s_edid.detailed_timings[0].data.pixel_data.vactive_vblank_hi |= \
 						((u8)(height / 256) << 4);
 
-	beada_edid.detailed_timings[0].data.pixel_data.width_mm_lo = \
+	beada->s_edid.detailed_timings[0].data.pixel_data.width_mm_lo = \
 							width_mm % 256;
-	beada_edid.detailed_timings[0].data.pixel_data.height_mm_lo = \
+	beada->s_edid.detailed_timings[0].data.pixel_data.height_mm_lo = \
 							height_mm % 256;
-	beada_edid.detailed_timings[0].data.pixel_data.width_height_mm_hi = \
+	beada->s_edid.detailed_timings[0].data.pixel_data.width_height_mm_hi = \
 					((u8)(width_mm / 256) << 4) | \
 					((u8)(height_mm / 256) & 0xf);
 
-	memcpy(&beada_edid.detailed_timings[2].data.other_data.data.str.str,
+	memcpy(&beada->s_edid.detailed_timings[2].data.other_data.data.str.str,
 		beada->model, strlen(beada->model));
 
 	snprintf(buf, 16, "%02X%02X%02X%02X\n",
 		beada->id[4], beada->id[5], beada->id[6], beada->id[7]);
 
-	memcpy(&beada_edid.detailed_timings[3].data.other_data.data.str.str,
+	memcpy(&beada->s_edid.detailed_timings[3].data.other_data.data.str.str,
 		buf, strlen(buf));
 
-	beada_edid.checksum = beada_edid_block_checksum((u8*)&beada_edid);
+	beada->s_edid.checksum = beada_edid_block_checksum((u8*)&beada->s_edid);
 }
 
 int beada_transmitter_init(struct beada_device *beada)
@@ -525,11 +529,28 @@ int beada_transmitter_init(struct beada_device *beada)
 int beada_set_backlight(struct beada_device *beada, int val)
 {
 	int ret;
+	unsigned int len, len1;
 
-	cmd_set_brightness[6] = val & 0xff;
-	ret = mpro_send_command(mpro, cmd_set_brightness, sizeof(cmd_set_brightness));
-	if (ret < 0)
-		return ret;
+	len = CMD_SIZE;
+
+	// prepare statuslink command
+	ret = fillSLSetBL(beada->cmd_buf, &len, val & 0xff);
+	if (ret) {
+		DRM_DEV_ERROR(&beada->udev->dev, "fillSLSetBL() error %d\n", ret);
+		return -EIO;
+	}
+
+	HexDump(beada->cmd_buf, len, beada->cmd_buf);
+
+	/* send request */
+	ret = usb_bulk_msg(beada->udev,
+			usb_sndbulkpipe(beada->udev, beada->misc_snd_ept),
+			beada->cmd_buf, len, &len1, CMD_TIMEOUT);
+
+	if (ret || len1 != len) {
+		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
+		return -EIO;
+	}
 
 	return 0;
 }

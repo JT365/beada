@@ -8,6 +8,7 @@
 
 #include <drm/drm_connector.h>
 #include <drm/drm_drv.h>
+#include <drm/drm_edid.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_rect.h>
 #include <linux/usb.h>
@@ -57,6 +58,14 @@ struct beada_device {
 	unsigned int version;
 	unsigned char id[8];
 	char *model;
+
+	/*
+ 	* We use fake EDID info so that userspace know that it is dealing with
+ 	* an Acer projector, rather then listing this as an "unknown" monitor.
+ 	* Note this assumes this driver is only ever used with the Acer C120, if we
+ 	* add support for other devices the vendor and model should be parameterized.
+ 	*/
+	struct edid s_edid;
 
 	unsigned int	width;
 	unsigned int	height;
