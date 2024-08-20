@@ -38,6 +38,7 @@
 
 struct transmitter {
 	unsigned int		state;
+	struct urb 			*urb;
 	unsigned char		*tag_buf;
 	unsigned char		*draw_buf;
 	struct iosys_map	dest_map;
@@ -86,7 +87,7 @@ struct beada_device {
 int beada_send_tag(struct beada_device *beada, struct transmitter *trans, const char* cmd);
 int beada_misc_request(struct beada_device *beada);
 int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip);
-void beada_fb_update_work(struct work_struct *work);
+void beada_fb_update_work(struct delayed_work *work);
 int beada_conn_get_modes(struct drm_connector *connector);
 int beada_edid_block_checksum(u8 *raw_edid);
 void beada_edid_setup(struct beada_device *beada);

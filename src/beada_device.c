@@ -277,10 +277,34 @@ int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffe
 	return 0;
 }
 
-void beada_fb_update_work(struct work_struct *work)
+static void beada_write_bulk_callback(struct urb *urb)
+{
+	struct transmitter *trans = urb->context;
+	struct beada_device *beada = (struct beada_device *)trans->crumbs;
+
+	/* sync/async unlink faults aren't errors */
+	if (urb->status && 
+	    !(urb->status == -ENOENT || 
+	      urb->status == -ECONNRESET ||
+	      urb->status == -ESHUTDOWN)) {
+		DRM_DEV_DEBUG(&beada->udev->dev, "%s - nonzero write bulk status received: %d",
+		    __FUNCTION__, urb->status);
+	}
+
+	if (urb->status) {
+		beada->old_rect.x1 = 0;
+		beada->old_rect.y1 = 0;
+		beada->old_rect.x2 = 0;
+		beada->old_rect.y2 = 0;
+	}
+
+	trans->state = TRANSMITTER_STAT_IDLE;
+}
+
+void beada_fb_update_work(struct delayed_work *work)
 {
 	struct transmitter *trans =
-		container_of(to_delayed_work(work), struct transmitter, work);	
+		container_of(work, struct transmitter, work);	
 	struct beada_device *beada = (struct beada_device *)trans->crumbs;
 	int height, width, len;
 	char fmtstr[256] = {0};
@@ -307,19 +331,23 @@ void beada_fb_update_work(struct work_struct *work)
 		beada->old_rect.y2 = height;
 	}
 
-	ret = usb_bulk_msg(beada->udev, usb_sndbulkpipe(beada->udev, beada->data_snd_ept), trans->draw_buf,
-			    len, NULL, PANELLINK_MAX_DELAY);
-	
-err_msg:
+	/* initialize the urb properly */
+	usb_fill_bulk_urb(trans->urb, beada->udev,
+		usb_sndbulkpipe(beada->udev, beada->data_snd_ept),
+		trans->draw_buf, len, beada_write_bulk_callback, trans);
+	trans->urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+
+	/* send the data out the bulk port */
+	ret = usb_submit_urb(trans->urb, GFP_KERNEL);
 	if (ret) {
-		beada->old_rect.x1 = 0;
-		beada->old_rect.y1 = 0;
-		beada->old_rect.x2 = 0;
-		beada->old_rect.y2 = 0;
-		dev_err_once(&beada->udev->dev, "Failed to update display %d\n", ret);
+		DRM_DEV_ERROR(&beada->udev->dev, "%s - failed submitting write urb, error %d", __FUNCTION__, ret);
+		goto err_msg;
 	}
 
-	trans->state = TRANSMITTER_STAT_IDLE;
+	return ;
+
+err_msg:
+
 }
 
 
@@ -354,7 +382,7 @@ void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map
 		if (trans->state == TRANSMITTER_STAT_IDLE) {
 			ret = beada_buf_copy(&trans->dest_map, map, fb, &form);
 			if (!ret) {
-				queue_delayed_work(system_long_wq, &trans->work, 0);		
+				beada_fb_update_work(&trans->work);	
 				trans->state = TRANSMITTER_STAT_BUSY;
 			}
 			goto err_msg;
@@ -371,9 +399,7 @@ err_msg:
 
 void beada_stop_fb_update(struct beada_device *beada)
 {
-	for (int i = 0; i < TRANSMITTER_NUM; i++) {
-		cancel_delayed_work_sync(&beada->trans[i].work);
-	}
+
 }
 
 int beada_edid_block_checksum(u8 *raw_edid)
@@ -506,6 +532,12 @@ int beada_transmitter_init(struct beada_device *beada)
 	for (int i = 0; i < TRANSMITTER_NUM; i++) {
 		trans = &beada->trans[i];
 
+		trans->urb = usb_alloc_urb(0, GFP_KERNEL);
+		if (!trans->urb) {
+			DRM_DEV_ERROR(&beada->udev->dev, "trans[%d].urb init failed\n", i);
+			return PTR_ERR(trans->urb);
+		}
+
 		trans->crumbs = (void *)beada;
 		trans->state = TRANSMITTER_STAT_IDLE;
 		trans->tag_buf = drmm_kmalloc(&beada->dev, CMD_SIZE, GFP_KERNEL);
@@ -514,13 +546,12 @@ int beada_transmitter_init(struct beada_device *beada)
 			return PTR_ERR(trans->tag_buf);
 		}
 
-		trans->draw_buf = drmm_kmalloc(&beada->dev, beada->height * beada->width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL);
+		trans->draw_buf = usb_alloc_coherent(beada->udev, beada->height * beada->width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL, &trans->urb->transfer_dma);
 		if (!trans->draw_buf) {
 			DRM_DEV_ERROR(&beada->udev->dev, "trans[%d].draw_buf init failed\n", i);
 			return PTR_ERR(trans->draw_buf);
 		}
 		iosys_map_set_vaddr(&trans->dest_map, trans->draw_buf);
-		INIT_DELAYED_WORK(&trans->work, beada_fb_update_work);
 	}
 
 	return 0;
