@@ -86,13 +86,13 @@ struct beada_device {
 
 int beada_send_tag(struct beada_device *beada, struct transmitter *trans, const char* cmd);
 int beada_misc_request(struct beada_device *beada);
-int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip);
+int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip, struct drm_format_conv_state *fmtcnv_state);
 void beada_fb_update_work(struct delayed_work *work);
 int beada_conn_get_modes(struct drm_connector *connector);
 int beada_edid_block_checksum(u8 *raw_edid);
 void beada_edid_setup(struct beada_device *beada);
 int beada_transmitter_init(struct beada_device *beada);
-void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect);
+void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect, struct drm_format_conv_state *fmtcnv_state);
 void beada_stop_fb_update(struct beada_device *beada);
 int beada_set_backlight(struct beada_device *beada, int val);
 

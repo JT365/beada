@@ -108,7 +108,7 @@ static void beada_pipe_enable(struct drm_simple_display_pipe *pipe,
 		.y2 = fb->height,
 	};
 
-	beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect);
+	beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect, &shadow_plane_state->fmtcnv_state);
 }
 
 static void beada_pipe_disable(struct drm_simple_display_pipe *pipe)
@@ -130,7 +130,7 @@ static void beada_pipe_update(struct drm_simple_display_pipe *pipe,
 		return;
 
 	if (drm_atomic_helper_damage_merged(old_state, state, &rect))
-		beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect);
+		beada_fb_mark_dirty(fb, &shadow_plane_state->data[0], &rect, &shadow_plane_state->fmtcnv_state);
 }
 
 static const struct drm_simple_display_pipe_funcs beada_pipe_funcs = {

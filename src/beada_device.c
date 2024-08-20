@@ -261,7 +261,7 @@ int beada_misc_request(struct beada_device *beada)
 	return 0;
 }
 
-int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip)
+int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffer *fb, struct drm_rect *clip, struct drm_format_conv_state *fmtcnv_state)
 {
 	int ret;
 	unsigned int pitch=0;
@@ -270,7 +270,7 @@ int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffe
 	if (ret)
 		return ret;
 
-	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map, fb, clip, false);
+	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map, fb, clip, fmtcnv_state, false);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
@@ -362,7 +362,7 @@ int beada_conn_get_modes(struct drm_connector *connector)
 	return drm_add_edid_modes(connector, &beada->s_edid);
 }
 
-void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect)
+void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map, struct drm_rect *rect, struct drm_format_conv_state *fmtcnv_state)
 {
 	struct beada_device *beada = to_beada(fb->dev);
 	struct transmitter *trans;
@@ -380,7 +380,7 @@ void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map
 	for (int i = 0; i < TRANSMITTER_NUM; i++) {
 		trans = &beada->trans[i];
 		if (trans->state == TRANSMITTER_STAT_IDLE) {
-			ret = beada_buf_copy(&trans->dest_map, map, fb, &form);
+			ret = beada_buf_copy(&trans->dest_map, map, fb, &form, fmtcnv_state);
 			if (!ret) {
 				beada_fb_update_work(&trans->work);	
 				trans->state = TRANSMITTER_STAT_BUSY;
