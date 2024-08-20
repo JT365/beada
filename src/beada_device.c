@@ -508,13 +508,13 @@ void beada_edid_setup(struct beada_device *beada)
 					((u8)(width_mm / 256) << 4) | \
 					((u8)(height_mm / 256) & 0xf);
 
-	memcpy(&beada->s_edid.detailed_timings[2].data.other_data.data.str.str,
+	memcpy(beada->s_edid.detailed_timings[2].data.other_data.data.str.str,
 		beada->model, strlen(beada->model));
 
 	snprintf(buf, 16, "%02X%02X%02X%02X\n",
 		beada->id[4], beada->id[5], beada->id[6], beada->id[7]);
 
-	memcpy(&beada->s_edid.detailed_timings[3].data.other_data.data.str.str,
+	memcpy(beada->s_edid.detailed_timings[3].data.other_data.data.str.str,
 		buf, strlen(buf));
 
 	beada->s_edid.checksum = beada_edid_block_checksum((u8*)&beada->s_edid);
