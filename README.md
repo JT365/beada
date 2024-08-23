@@ -1,6 +1,7 @@
 # beada
 DRM Driver for BeadaPanel USB Media Display, inherit from main stream gm12u320 driver.
-<img src="https://github.com/JT365/beada/blob/master/uds-2.png" width="600"/><br>
+
+<img src="https://github.com/JT365/beada/blob/main/uds-2.png" width="600"/><br>
 
 #### How to build
 ```
