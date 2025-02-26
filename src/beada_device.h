@@ -23,14 +23,16 @@
 #define MODEL_3		3
 #define MODEL_4		4
 #define MODEL_5C		10
-#define MODEL_5S		11
+#define MODEL_5T		11
 #define MODEL_7C		12
 #define MODEL_3C		13
 #define MODEL_4C		14
 #define MODEL_6C		15
 #define MODEL_6S		16
-#define MODEL_2		17
+#define MODEL_2			17
 #define MODEL_2W		18 
+#define MODEL_7S		19
+#define MODEL_5S		20
 
 #define TRANSMITTER_STAT_BUSY	1
 #define TRANSMITTER_STAT_IDLE	0
@@ -46,9 +48,18 @@ struct transmitter {
 	struct delayed_work work;
 };
 
+typedef _GEOMETRIC_PARA {
+	char *name;
+	unsigned int	width;
+	unsigned int	height;
+	unsigned int	margin;
+	unsigned int	width_mm;
+	unsigned int	height_mm;
+} GEOMETRIC_PARA;
+
 struct beada_device {
 	struct drm_device				dev;
-	struct backlight_device         *bl_dev;
+	struct backlight_device			*bl_dev;
 	struct drm_simple_display_pipe	pipe;
 	struct drm_connector			conn;
 	struct usb_device				*udev;
@@ -58,7 +69,7 @@ struct beada_device {
 	unsigned int screen;
 	unsigned int version;
 	unsigned char id[8];
-	char *model;
+	GEOMETRIC_PARA geometrics;
 
 	/*
  	* We use fake EDID info so that userspace know that it is dealing with
@@ -67,12 +78,6 @@ struct beada_device {
  	* add support for other devices the vendor and model should be parameterized.
  	*/
 	struct edid s_edid;
-
-	unsigned int	width;
-	unsigned int	height;
-	unsigned int	margin;
-	unsigned int	width_mm;
-	unsigned int	height_mm;
 
 	unsigned char	*cmd_buf;
 	struct transmitter	trans[TRANSMITTER_NUM];

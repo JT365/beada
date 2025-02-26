@@ -32,6 +32,28 @@
 #define PANELLINK_MAX_DELAY		msecs_to_jiffies(2000)
 #define CMD_SIZE			512*4
 
+typedef _GEOMETRIC_MODE {
+	unsigned char id;
+	GEOMETRIC_PARA para;
+} GEOMETRIC_MODE;
+
+GEOMETRIC_MODE mode_list[] = {
+	{MODEL_2, "2", {480, 480, 0, 53, 53}},
+	{MODEL_2W, "2W", {480, 480, 0, 70, 70}},
+	{MODEL_3, "3", {480, 320, 0, 62, 40}},
+	{MODEL_4, "4", {800, 480, 0, 94, 56}},
+	{MODEL_3C, "3C", {480, 320, 0, 62, 40}},
+	{MODEL_4C, "4C", {800, 480, 0, 94, 56}},
+	{MODEL_5, "5", {800, 480, 0, 108, 65}},
+	{MODEL_5T, "5T", {800, 480, 0, 108, 65}},
+	{MODEL_5S, "5S", {854, 480, 0, 110, 62}},
+	{MODEL_6, "6", {1280, 480, 0, 161, 60}},
+	{MODEL_6C, "6C", {1280, 480, 0, 161, 60}},
+	{MODEL_6S, "6S", {1280, 480, 0, 161, 60}},
+	{MODEL_7C, "7C", {800, 480, 0, 62, 110}},
+	{MODEL_7S, "7S", {1280, 400, 0, 190, 59}}
+};
+
 void HexDump(unsigned char *buf, int len, unsigned char *addr) {
 	int i, j, k;
 	char binstr[80];
@@ -96,6 +118,16 @@ int beada_send_tag(struct beada_device *beada, struct transmitter *trans, const 
 	return 0;
 }
 
+int find_mode(unsigned char id)
+{
+	for (int i=0; i<sizeof(mode_list)/sizeof(GEOMETRIC_MODE); i++) {
+		if (mode_list[i].id == id)
+			return i;
+	}
+
+	return -1;
+}
+
 int beada_misc_request(struct beada_device *beada)
 {
 	int ret;
@@ -156,108 +188,14 @@ int beada_misc_request(struct beada_device *beada)
 		return -EIO;
 	}
 
-	switch (beada->info.os_version) {
-	case MODEL_2:
-		model = "2";
-		width = 480;
-		height = 480;
-		width_mm = 53;
-		height_mm = 53;
-		break;
-	case MODEL_2W:
-		model = "2W";
-		width = 480;
-		height = 480;
-		width_mm = 70;
-		height_mm = 70;
-		break;
-	case MODEL_3:
-		model = "3";
-		height = 480;
-		width = 320;
-		height_mm = 62;
-		width_mm = 40;
-		break;
-	case MODEL_4:
-		model = "4";
-		height = 800;
-		width = 480;
-		height_mm = 94;
-		width_mm = 56;
-		break;
-	case MODEL_3C:
-		model = "3C";
-		width = 480;
-		height = 320;
-		width_mm = 62;
-		height_mm = 40;
-		break;
-	case MODEL_4C:
-		model = "4C";
-		width = 800;
-		height = 480;
-		width_mm = 94;
-		height_mm = 56;
-		break;
-	case MODEL_5:
-		model = "5";
-		width = 800;
-		height = 480;
-		width_mm = 108;
-		height_mm = 65;
-		break;
-	case MODEL_5S:
-		model = "5S";
-		width = 800;
-		height = 480;
-		width_mm = 108;
-		height_mm = 65;
-		break;
-	case MODEL_6:
-		model = "6";
-		height = 1280;
-		width = 480;
-		height_mm = 161;
-		width_mm = 60;
-		break;
-	case MODEL_6C:
-		model = "6C";
-		width = 1280;
-		height = 480;
-		width_mm = 161;
-		height_mm = 60;
-		break;
-	case MODEL_6S:
-		model = "6S";
-		width = 1280;
-		height = 480;
-		width_mm = 161;
-		height_mm = 60;
-		break;
-	case MODEL_7C:
-		model = "7C";
-		width = 800;
-		height = 480;
-		width_mm = 62;
-		height_mm = 110;
-		break;
-	default:
-		model = "5";
-		width  = 800;
-		height = 480;
-		margin = 0;
-		width_mm = 108;
-		height_mm = 65;	
-		break;
+	/* find avaiable geometric parameters */
+	ret = find_mode(beada->info.os_version);
+	if (ret<0) {
+		DRM_DEV_ERROR(&beada->udev->dev, "find_mode() error %d\n", ret);
+		return -EIO;
 	}
 
-	beada->width = width;
-	beada->height = height;
-	beada->margin = margin;
-	beada->model = model;
-	beada->width_mm = width_mm;
-	beada->height_mm = height_mm;
-	
+	beada->geometrics = mode_list[ret].para;
 	return 0;
 }
 
@@ -310,8 +248,8 @@ void beada_fb_update_work(struct delayed_work *work)
 	char fmtstr[256] = {0};
 	int ret = 0;
 
-	height = beada->height;
-	width = beada->width;
+	height = beada->geometrics.height;
+	width = beada->geometrics.width;
 	len = height * width * RGB565_BPP / 8;
 
 	/* send a new tag if rect size changed */
@@ -369,9 +307,9 @@ void beada_fb_mark_dirty(struct drm_framebuffer *fb, const struct iosys_map *map
 	int idx, ret;
 	struct drm_rect form = {
 		.x1 = 0,
-		.x2 = beada->width,
+		.x2 = beada->geometrics.width,
 		.y1 = 0,
-		.y2 = beada->height,
+		.y2 = beada->geometrics.height,
 	};
 
 	if (!drm_dev_enter(fb->dev, &idx))
@@ -485,10 +423,10 @@ void beada_edid_setup(struct beada_device *beada)
 
 	beada->s_edid = beada_edid;
 
-	width = beada->width;
-	height = beada->height;
-	width_mm = beada->width_mm;
-	height_mm = beada->height_mm;
+	width = beada->geometrics.width;
+	height = beada->geometrics.height;
+	width_mm = beada->geometrics.width_mm;
+	height_mm = beada->geometrics.height_mm;
 
 	beada->s_edid.detailed_timings[0].data.pixel_data.hactive_lo = width % 256;
 	beada->s_edid.detailed_timings[0].data.pixel_data.hactive_hblank_hi &= 0x0f;
@@ -546,7 +484,7 @@ int beada_transmitter_init(struct beada_device *beada)
 			return PTR_ERR(trans->tag_buf);
 		}
 
-		trans->draw_buf = usb_alloc_coherent(beada->udev, beada->height * beada->width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL, &trans->urb->transfer_dma);
+		trans->draw_buf = usb_alloc_coherent(beada->udev, beada->geometrics.height * beada->geometrics.width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL, &trans->urb->transfer_dma);
 		if (!trans->draw_buf) {
 			DRM_DEV_ERROR(&beada->udev->dev, "trans[%d].draw_buf init failed\n", i);
 			return PTR_ERR(trans->draw_buf);
