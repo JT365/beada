@@ -6,13 +6,14 @@
 #include <linux/module.h>
 #include <linux/pm.h>
 #include <linux/usb.h>
+#include <linux/backlight.h>
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_atomic_state_helper.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_drv.h>
-#include <drm/drm_fbdev_generic.h>
+#include <drm/drm_fbdev_shmem.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_file.h>
 #include <drm/drm_fourcc.h>
@@ -274,7 +275,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 		goto err_put_device;
 	}
 
-	drm_fbdev_generic_setup(dev, 0);
+	drm_fbdev_shmem_setup(dev, 0);
 
 	DRM_DEV_INFO(&beada->udev->dev, "BeadaPanel %s detected\n", beada->model);
 	return ret;
