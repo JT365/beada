@@ -48,7 +48,7 @@ struct transmitter {
 	struct delayed_work work;
 };
 
-typedef _GEOMETRIC_PARA {
+typedef struct _GEOMETRIC_PARA {
 	char *name;
 	unsigned int	width;
 	unsigned int	height;

@@ -192,10 +192,10 @@ static void beada_mode_config_setup(struct beada_device *beada)
 	struct drm_device *dev = &beada->dev;
 
 	dev->mode_config.funcs = &beada_mode_config_funcs;
-	dev->mode_config.min_width = beada->width;
-	dev->mode_config.max_width = beada->width;
-	dev->mode_config.min_height = beada->height;
-	dev->mode_config.max_height = beada->height;
+	dev->mode_config.min_width = beada->geometrics.width;
+	dev->mode_config.max_width = beada->geometrics.width;
+	dev->mode_config.min_height = beada->geometrics.height;
+	dev->mode_config.max_height = beada->geometrics.height;
 }
 
 static int beada_usb_probe(struct usb_interface *interface,
@@ -276,7 +276,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	drm_fbdev_generic_setup(dev, 0);
 
-	DRM_DEV_INFO(&beada->udev->dev, "BeadaPanel %s detected\n", beada->model);
+	DRM_DEV_INFO(&beada->udev->dev, "BeadaPanel %s detected\n", beada->geometrics.name);
 	return ret;
 
 err_put_device:
