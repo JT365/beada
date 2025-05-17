@@ -32,7 +32,7 @@
 #define PANELLINK_MAX_DELAY		msecs_to_jiffies(2000)
 #define CMD_SIZE			512*4
 
-typedef _GEOMETRIC_MODE {
+typedef struct _GEOMETRIC_MODE {
 	unsigned char id;
 	GEOMETRIC_PARA para;
 } GEOMETRIC_MODE;
@@ -44,6 +44,7 @@ GEOMETRIC_MODE mode_list[] = {
 	{MODEL_4, {"4", 480, 800, 0, 56, 94}},
 	{MODEL_3C, {"3C", 480, 320, 0, 62, 40}},
 	{MODEL_4C, {"4C", 800, 480, 0, 94, 56}},
+	{MODEL_5C, {"5C", 800, 480, 0, 108, 65}},
 	{MODEL_5, {"5", 800, 480, 0, 108, 65}},
 	{MODEL_5T, {"5T", 800, 480, 0, 108, 65}},
 	{MODEL_5S, {"5S", 854, 480, 0, 110, 62}},
@@ -447,7 +448,7 @@ void beada_edid_setup(struct beada_device *beada)
 					((u8)(height_mm / 256) & 0xf);
 
 	memcpy(beada->s_edid.detailed_timings[2].data.other_data.data.str.str,
-		beada->model, strlen(beada->model));
+		beada->geometrics.name, strlen(beada->geometrics.name));
 
 	snprintf(buf, 16, "%02X%02X%02X%02X\n",
 		beada->id[4], beada->id[5], beada->id[6], beada->id[7]);
@@ -484,7 +485,7 @@ int beada_transmitter_init(struct beada_device *beada)
 			return PTR_ERR(trans->tag_buf);
 		}
 
-		trans->draw_buf = usb_alloc_coherent(beada->udev, beada->geometrics.height * beada->geometrics.width * RGB565_BPP / 8 + beada->margin, GFP_KERNEL, &trans->urb->transfer_dma);
+		trans->draw_buf = usb_alloc_coherent(beada->udev, beada->geometrics.height * beada->geometrics.width * RGB565_BPP / 8 + beada->geometrics.margin, GFP_KERNEL, &trans->urb->transfer_dma);
 		if (!trans->draw_buf) {
 			DRM_DEV_ERROR(&beada->udev->dev, "trans[%d].draw_buf init failed\n", i);
 			return PTR_ERR(trans->draw_buf);
