@@ -33,6 +33,12 @@
 #define MODEL_2W		18 
 #define MODEL_7S		19
 #define MODEL_5S		20
+#define MODEL_8			21
+#define MODEL_11		22
+#define MODEL_9			23
+#define MODEL_Y			24
+#define MODEL_X			25 
+#define MODEL_Z			26
 
 #define TRANSMITTER_STAT_BUSY	1
 #define TRANSMITTER_STAT_IDLE	0
