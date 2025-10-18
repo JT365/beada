@@ -38,27 +38,27 @@ typedef struct _GEOMETRIC_MODE {
 } GEOMETRIC_MODE;
 
 GEOMETRIC_MODE mode_list[] = {
-	{MODEL_2, {"2", 480, 480, 0, 53, 53}},
-	{MODEL_2W, {"2W", 480, 480, 0, 70, 70}},
-	{MODEL_3, {"3", 320, 480, 0, 40, 62}},
-	{MODEL_4, {"4", 480, 800, 0, 56, 94}},
-	{MODEL_3C, {"3C", 480, 320, 0, 62, 40}},
-	{MODEL_4C, {"4C", 800, 480, 0, 94, 56}},
-	{MODEL_5C, {"5C", 800, 480, 0, 108, 65}},
-	{MODEL_5, {"5", 800, 480, 0, 108, 65}},
-	{MODEL_5T, {"5T", 800, 480, 0, 108, 65}},
-	{MODEL_5S, {"5S", 480, 854, 0, 62, 110}},
-	{MODEL_6, {"6", 480, 1280, 0, 60, 161}},
-	{MODEL_6C, {"6C", 1280, 480, 0, 161, 60}},
-	{MODEL_6S, {"6S", 1280, 480, 0, 161, 60}},
-	{MODEL_7C, {"7C", 800, 480, 0, 62, 110}},
-	{MODEL_7S, {"7S", 1280, 400, 0, 190, 59}},
-	{MODEL_8, {"8", 480, 1920, 0, 54, 219}},
-	{MODEL_Y, {"Y", 480, 1920, 0, 54, 219}},
-	{MODEL_11, {"11", 440, 1920, 0, 58, 253}},
-	{MODEL_X, {"X", 440, 1920, 0, 58, 253}},
-	{MODEL_9, {"9", 462, 1920, 0, 55, 226}},
-	{MODEL_Z, {"Z", 462, 1920, 0, 55, 226}}
+	{MODEL_2, {"2", 480, 480, 0, 1, 53, 53}},
+	{MODEL_2W, {"2W", 480, 480, 0, 1, 70, 70}},
+	{MODEL_3, {"3", 320, 480, 0, 1, 40, 62}},
+	{MODEL_4, {"4", 480, 800, 0, 1, 56, 94}},
+	{MODEL_3C, {"3C", 480, 320, 0, 1, 62, 40}},
+	{MODEL_4C, {"4C", 800, 480, 0, 1, 94, 56}},
+	{MODEL_5C, {"5C", 800, 480, 0, 1, 108, 65}},
+	{MODEL_5, {"5", 800, 480, 0, 1, 108, 65}},
+	{MODEL_5T, {"5T", 800, 480, 0, 1, 108, 65}},
+	{MODEL_5S, {"5S", 480, 854, 0, 1, 62, 110}},
+	{MODEL_6, {"6", 480, 1280, 0, 1, 60, 161}},
+	{MODEL_6C, {"6C", 1280, 480, 0, 1, 161, 60}},
+	{MODEL_6S, {"6S", 1280, 480, 0, 1, 161, 60}},
+	{MODEL_7C, {"7C", 800, 480, 0, 1, 62, 110}},
+	{MODEL_7S, {"7S", 1280, 400, 0, 1, 190, 59}},
+	{MODEL_8, {"8", 480, 1920, 0, 1, 54, 219}},
+	{MODEL_Y, {"Y", 480, 1920, 0, 1, 54, 219}},
+	{MODEL_11, {"11", 440, 1920, 0, 1, 58, 253}},
+	{MODEL_X, {"X", 440, 1920, 0, 1, 58, 253}},
+	{MODEL_9, {"9", 462, 1920, 0, 1, 55, 226}},
+	{MODEL_Z, {"Z", 462, 1920, 0, 1, 55, 226}}
 };
 
 void HexDump(unsigned char *buf, int len, unsigned char *addr) {
@@ -198,11 +198,19 @@ int beada_misc_request(struct beada_device *beada)
 	/* find avaiable geometric parameters */
 	ret = find_mode(beada->info.os_version);
 	if (ret<0) {
-		DRM_DEV_ERROR(&beada->udev->dev, "find_mode() error %d\n", ret);
-		return -EIO;
+		/* fall back to use a regular format, if current device absent in mode_list. */
+		DRM_DEV_INFO(&beada->udev->dev, "find_mode() error %d\n", ret);
+		beada->geometrics.name = "unknown";
+		beada->geometrics.margin = 0;
+		beada->geometrics.format = 0;
+		beada->geometrics.width = beada->info.screen_resolution_x;
+		beada->geometrics.height = beada->info.screen_resolution_y;
+		beada->geometrics.width_mm = 0;
+		beada->geometrics.height_mm = 0;
 	}
+	else
+		beada->geometrics = mode_list[ret].para;
 
-	beada->geometrics = mode_list[ret].para;
 	return 0;
 }
 
@@ -265,7 +273,12 @@ void beada_fb_update_work(struct delayed_work *work)
 		(beada->old_rect.x2 == 0) &&
 		(beada->old_rect.y2 == 0)) ) {
 
-		snprintf(fmtstr, sizeof(fmtstr), "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
+		/* fall back to use a regular tag, if current device absent in mode_list. */
+		if (beada->geometrics.format)
+			snprintf(fmtstr, sizeof(fmtstr), "image/x-raw, format=BGR16, height=%d, width=%d, framerate=0/1", height, width);
+		else 
+			snprintf(fmtstr, sizeof(fmtstr), "video/x-raw, format=RGB16, height=%d, width=%d, framerate=0/1", height, width);
+
 		ret = beada_send_tag(beada, trans, (const char *)fmtstr);
 		if (ret < 0)
 			goto err_msg;

@@ -59,6 +59,7 @@ typedef struct _GEOMETRIC_PARA {
 	unsigned int	width;
 	unsigned int	height;
 	unsigned int	margin;
+	unsigned int	format;
 	unsigned int	width_mm;
 	unsigned int	height_mm;
 } GEOMETRIC_PARA;
