@@ -37,7 +37,7 @@ typedef struct _GEOMETRIC_MODE {
 	GEOMETRIC_PARA para;
 } GEOMETRIC_MODE;
 
-GEOMETRIC_MODE mode_list[] = {
+GEOMETRIC_MODE santa_claus[] = {
 	{MODEL_2, {"2", 480, 480, 0, 1, 53, 53}},
 	{MODEL_2W, {"2W", 480, 480, 0, 1, 70, 70}},
 	{MODEL_3, {"3", 320, 480, 0, 1, 40, 62}},
@@ -125,10 +125,10 @@ int beada_send_tag(struct beada_device *beada, struct transmitter *trans, const 
 	return 0;
 }
 
-int find_mode(unsigned char id)
+int find_optimize(unsigned char id)
 {
-	for (int i=0; i<sizeof(mode_list)/sizeof(GEOMETRIC_MODE); i++) {
-		if (mode_list[i].id == id)
+	for (int i=0; i<sizeof(santa_claus)/sizeof(GEOMETRIC_MODE); i++) {
+		if (santa_claus[i].id == id)
 			return i;
 	}
 
@@ -195,11 +195,11 @@ int beada_misc_request(struct beada_device *beada)
 		return -EIO;
 	}
 
-	/* find avaiable geometric parameters */
-	ret = find_mode(beada->info.os_version);
+	/* find parameters for performance optimization. */
+	ret = find_optimize(beada->info.os_version);
 	if (ret<0) {
-		/* fall back to use a regular format, if current device absent in mode_list. */
-		DRM_DEV_INFO(&beada->udev->dev, "find_mode() error %d\n", ret);
+		/* fall back to use a regular format, if current device absent in santa_claus. */
+		DRM_DEV_INFO(&beada->udev->dev, "find_optimize() failed %d\n", ret);
 		beada->geometrics.name = "unknown";
 		beada->geometrics.margin = 0;
 		beada->geometrics.format = 0;
@@ -209,7 +209,7 @@ int beada_misc_request(struct beada_device *beada)
 		beada->geometrics.height_mm = 0;
 	}
 	else
-		beada->geometrics = mode_list[ret].para;
+		beada->geometrics = santa_claus[ret].para;
 
 	return 0;
 }
