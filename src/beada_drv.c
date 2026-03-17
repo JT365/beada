@@ -55,8 +55,12 @@ static int beada_conn_late_register(struct drm_connector *connector)
 {
 	struct beada_device *beada = to_beada(connector->dev);
 	struct backlight_device *bl;
+	char bl_name[32];
+	struct usb_device *udev = beada->udev;
 
-	bl = backlight_device_register("backlight",
+	snprintf(bl_name, sizeof(bl_name), "beada_bl-%s", dev_name(&udev->dev));
+
+	bl = backlight_device_register(bl_name,
 					connector->kdev, beada,
 					&beada_bl_ops, NULL);
 	if (IS_ERR(bl)) {
