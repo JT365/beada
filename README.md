@@ -5,7 +5,9 @@ DRM Driver for BeadaPanel USB Media Display, inherit from main stream gm12u320 d
 
 #### How to build
 ```
-git clone https://github.com/JT365/beada 
+git clone -b ub-6.11.0 https://github.com/JT365/beada 
 cd beada/src
 make -C /usr/src/linux-headers-`uname -r`/ M=`pwd` modules
 ```
+#### Installation
+<https://elinux.org/BeadaPanel#DRM_Driver_Installation_on_Ubuntu_24.04>
