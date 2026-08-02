@@ -27,7 +27,7 @@
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_print.h>
-#include <drm/drm_fbdev_shmem.h>
+#include <drm/drm_fbdev_generic.h>
 
 #include "beada_device.h"
 
@@ -280,7 +280,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 		goto err_put_device;
 	}
 
-	drm_fbdev_shmem_setup(dev, 0);
+	drm_fbdev_generic_setup(dev, 0);
 
 	dev_info(&beada->udev->dev, "BeadaPanel %s detected\n", beada->geometrics.name);
 	return ret;
