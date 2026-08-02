@@ -26,6 +26,8 @@
 #include <drm/drm_modeset_helper_vtables.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_simple_kms_helper.h>
+#include <drm/drm_print.h>
+#include <drm/drm_fbdev_shmem.h>
 
 #include "beada_device.h"
 
@@ -177,7 +179,6 @@ static const struct drm_driver beada_drm_driver = {
 
 	.name		 = DRIVER_NAME,
 	.desc		 = DRIVER_DESC,
-	.date		 = DRIVER_DATE,
 	.major		 = DRIVER_MAJOR,
 	.minor		 = DRIVER_MINOR,
 
@@ -220,7 +221,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 	beada = devm_drm_dev_alloc(&interface->dev, &beada_drm_driver,
 				      struct beada_device, dev);
 	if (IS_ERR(beada)) {
-		DRM_DEV_ERROR(&beada->udev->dev, "devm_drm_dev_alloc() failed\n");
+		dev_err(&beada->udev->dev, "devm_drm_dev_alloc() failed\n");
 		return PTR_ERR(beada);
 	}
 	
@@ -229,7 +230,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 	dev = &beada->dev;
 	beada->dmadev = usb_intf_get_dma_device(to_usb_interface(dev->dev));
 	if (!beada->dmadev)
-		DRM_DEV_DEBUG(&beada->udev->dev, "buffer sharing not supported"); /* not an error */
+		dev_dbg(&beada->udev->dev, "buffer sharing not supported"); /* not an error */
 
 	ret = beada_misc_request(beada);
 	if (ret) {
@@ -238,7 +239,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	ret = drmm_mode_config_init(dev);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "drmm_mode_config_init() return %d\n", ret);
+		dev_err(&beada->udev->dev, "drmm_mode_config_init() return %d\n", ret);
 		goto err_put_device;
 	}
 
@@ -252,7 +253,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 
 	ret = beada_conn_init(beada);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "beada_conn_init() return %d\n", ret);
+		dev_err(&beada->udev->dev, "beada_conn_init() return %d\n", ret);
 		goto err_put_device;
 	}
 
@@ -264,7 +265,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 					   beada_pipe_modifiers,
 					   &beada->conn);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "drm_simple_display_pipe_init() return %d\n", ret);
+		dev_err(&beada->udev->dev, "drm_simple_display_pipe_init() return %d\n", ret);
 		goto err_put_device;
 	}
 
@@ -275,19 +276,19 @@ static int beada_usb_probe(struct usb_interface *interface,
 	usb_set_intfdata(interface, dev);
 	ret = drm_dev_register(dev, 0);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "drm_dev_register() return %d\n", ret);
+		dev_err(&beada->udev->dev, "drm_dev_register() return %d\n", ret);
 		goto err_put_device;
 	}
 
 	drm_fbdev_shmem_setup(dev, 0);
 
-	DRM_DEV_INFO(&beada->udev->dev, "BeadaPanel %s detected\n", beada->geometrics.name);
+	dev_info(&beada->udev->dev, "BeadaPanel %s detected\n", beada->geometrics.name);
 	return ret;
 
 err_put_device:
 	put_device(beada->dmadev);
 
-	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_probe() exit from err_put_device\n");
+	dev_dbg(&beada->udev->dev, "--------------beada_usb_probe() exit from err_put_device\n");
 	return ret;
 }
 
@@ -296,14 +297,14 @@ static void beada_usb_disconnect(struct usb_interface *interface)
 	struct drm_device *dev = usb_get_intfdata(interface);
 	struct beada_device *beada = to_beada(dev);
 
-	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_disconnect() enter\n");
+	dev_dbg(&beada->udev->dev, "--------------beada_usb_disconnect() enter\n");
 
 	put_device(beada->dmadev);
 	beada->dmadev = NULL;
 	drm_dev_unplug(dev);
 	drm_atomic_helper_shutdown(dev);
 
-	DRM_DEV_DEBUG(&beada->udev->dev, "--------------beada_usb_disconnect() exit\n");
+	dev_dbg(&beada->udev->dev, "--------------beada_usb_disconnect() exit\n");
 }
 
 static int beada_suspend(struct usb_interface *interface,

@@ -106,7 +106,7 @@ int beada_send_tag(struct beada_device *beada, struct transmitter *trans, const 
 	/* prepare tag header */
 	ret = fillPLStart(trans->tag_buf, &len, cmd);	
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "fillPLStart() error %d\n", ret);
+		dev_err(&beada->udev->dev, "fillPLStart() error %d\n", ret);
 		return -EIO;
 	}
 
@@ -118,7 +118,7 @@ int beada_send_tag(struct beada_device *beada, struct transmitter *trans, const 
 			trans->tag_buf, len, &len1, CMD_TIMEOUT);
 
 	if (ret || len != len1) {
-		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() error %d\n", ret);
+		dev_err(&beada->udev->dev, "usb_bulk_msg() error %d\n", ret);
 		return -EIO;
 	}
 
@@ -149,7 +149,7 @@ int beada_misc_request(struct beada_device *beada)
 
 	beada->cmd_buf = drmm_kmalloc(&beada->dev, CMD_SIZE, GFP_KERNEL);
 	if (!beada->cmd_buf) {
-		DRM_DEV_ERROR(&beada->udev->dev, "beada->cmd_buf init failed\n");
+		dev_err(&beada->udev->dev, "beada->cmd_buf init failed\n");
 		return -EIO;
 	}
 
@@ -159,7 +159,7 @@ int beada_misc_request(struct beada_device *beada)
 	// prepare statuslink command
 	ret = fillSLGetInfo(beada->cmd_buf, &len);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "fillSLGetInfo() error %d\n", ret);
+		dev_err(&beada->udev->dev, "fillSLGetInfo() error %d\n", ret);
 		return -EIO;
 	}
 
@@ -171,7 +171,7 @@ int beada_misc_request(struct beada_device *beada)
 			beada->cmd_buf, len, &len1, CMD_TIMEOUT);
 
 	if (ret || len1 != len) {
-		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
+		dev_err(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
 		return -EIO;
 	}
 
@@ -182,7 +182,7 @@ int beada_misc_request(struct beada_device *beada)
 			beada->cmd_buf, len, &len1,
 			DATA_TIMEOUT);
 	if (ret || len1 != len) {
-		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() read error %d\n", ret);
+		dev_err(&beada->udev->dev, "usb_bulk_msg() read error %d\n", ret);
 		return -EIO;
 	}
 
@@ -191,7 +191,7 @@ int beada_misc_request(struct beada_device *beada)
 	/* retrive BeadaPanel device info into a local structure */
 	ret = retrivSLGetInfo(beada->cmd_buf, len, &beada->info);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "retrivSLGetInfo() error %d\n", ret);
+		dev_err(&beada->udev->dev, "retrivSLGetInfo() error %d\n", ret);
 		return -EIO;
 	}
 
@@ -199,7 +199,7 @@ int beada_misc_request(struct beada_device *beada)
 	ret = find_optimize(beada->info.os_version);
 	if (ret<0) {
 		/* fall back to use a regular format, if current device absent in santa_claus. */
-		DRM_DEV_INFO(&beada->udev->dev, "find_optimize() failed %d\n", ret);
+		dev_info(&beada->udev->dev, "find_optimize() failed %d\n", ret);
 		beada->geometrics.name = "unknown";
 		beada->geometrics.margin = 0;
 		beada->geometrics.format = 0;
@@ -240,7 +240,7 @@ static void beada_write_bulk_callback(struct urb *urb)
 	    !(urb->status == -ENOENT || 
 	      urb->status == -ECONNRESET ||
 	      urb->status == -ESHUTDOWN)) {
-		DRM_DEV_DEBUG(&beada->udev->dev, "%s - nonzero write bulk status received: %d",
+		dev_dbg(&beada->udev->dev, "%s - nonzero write bulk status received: %d",
 		    __FUNCTION__, urb->status);
 	}
 
@@ -298,7 +298,7 @@ void beada_fb_update_work(struct delayed_work *work)
 	/* send the data out the bulk port */
 	ret = usb_submit_urb(trans->urb, GFP_KERNEL);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "%s - failed submitting write urb, error %d", __FUNCTION__, ret);
+		dev_err(&beada->udev->dev, "%s - failed submitting write urb, error %d", __FUNCTION__, ret);
 		goto err_msg;
 	}
 
@@ -492,7 +492,7 @@ int beada_transmitter_init(struct beada_device *beada)
 
 		trans->urb = usb_alloc_urb(0, GFP_KERNEL);
 		if (!trans->urb) {
-			DRM_DEV_ERROR(&beada->udev->dev, "trans[%d].urb init failed\n", i);
+			dev_err(&beada->udev->dev, "trans[%d].urb init failed\n", i);
 			return PTR_ERR(trans->urb);
 		}
 
@@ -500,13 +500,13 @@ int beada_transmitter_init(struct beada_device *beada)
 		trans->state = TRANSMITTER_STAT_IDLE;
 		trans->tag_buf = drmm_kmalloc(&beada->dev, CMD_SIZE, GFP_KERNEL);
 		if (!trans->tag_buf) {
-			DRM_DEV_ERROR(&beada->udev->dev, "trans[%d].tag_buf init failed\n", i);
+			dev_err(&beada->udev->dev, "trans[%d].tag_buf init failed\n", i);
 			return PTR_ERR(trans->tag_buf);
 		}
 
 		trans->draw_buf = usb_alloc_coherent(beada->udev, beada->geometrics.height * beada->geometrics.width * RGB565_BPP / 8 + beada->geometrics.margin, GFP_KERNEL, &trans->urb->transfer_dma);
 		if (!trans->draw_buf) {
-			DRM_DEV_ERROR(&beada->udev->dev, "trans[%d].draw_buf init failed\n", i);
+			dev_err(&beada->udev->dev, "trans[%d].draw_buf init failed\n", i);
 			return PTR_ERR(trans->draw_buf);
 		}
 		iosys_map_set_vaddr(&trans->dest_map, trans->draw_buf);
@@ -525,7 +525,7 @@ int beada_set_backlight(struct beada_device *beada, int val)
 	// prepare statuslink command
 	ret = fillSLSetBL(beada->cmd_buf, &len, val & 0xff);
 	if (ret) {
-		DRM_DEV_ERROR(&beada->udev->dev, "fillSLSetBL() error %d\n", ret);
+		dev_err(&beada->udev->dev, "fillSLSetBL() error %d\n", ret);
 		return -EIO;
 	}
 
@@ -537,7 +537,7 @@ int beada_set_backlight(struct beada_device *beada, int val)
 			beada->cmd_buf, len, &len1, CMD_TIMEOUT);
 
 	if (ret || len1 != len) {
-		DRM_DEV_ERROR(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
+		dev_err(&beada->udev->dev, "usb_bulk_msg() write error %d\n", ret);
 		return -EIO;
 	}
 
