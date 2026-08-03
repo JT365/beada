@@ -176,6 +176,7 @@ DEFINE_DRM_GEM_FOPS(beada_fops);
 static const struct drm_driver beada_drm_driver = {
 	.driver_features = DRIVER_MODESET | DRIVER_GEM | DRIVER_ATOMIC,
         DRM_GEM_SHMEM_DRIVER_OPS,
+	.gem_prime_import = beada_gem_prime_import,
         DRM_FBDEV_SHMEM_DRIVER_OPS,
 	.name		 = DRIVER_NAME,
 	.desc		 = DRIVER_DESC,
@@ -183,8 +184,6 @@ static const struct drm_driver beada_drm_driver = {
 	.minor		 = DRIVER_MINOR,
 
 	.fops		 = &beada_fops,
-	DRM_GEM_SHMEM_DRIVER_OPS,
-	.gem_prime_import = beada_gem_prime_import,
 };
 
 static const struct drm_mode_config_funcs beada_mode_config_funcs = {
