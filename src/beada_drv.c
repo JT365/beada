@@ -27,7 +27,6 @@
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_print.h>
-#include <drm/drm_client_setup.h>
 
 #include "beada_device.h"
 
@@ -176,7 +175,8 @@ DEFINE_DRM_GEM_FOPS(beada_fops);
 
 static const struct drm_driver beada_drm_driver = {
 	.driver_features = DRIVER_MODESET | DRIVER_GEM | DRIVER_ATOMIC,
-
+        DRM_GEM_SHMEM_DRIVER_OPS,
+        DRM_FBDEV_SHMEM_DRIVER_OPS,
 	.name		 = DRIVER_NAME,
 	.desc		 = DRIVER_DESC,
 	.major		 = DRIVER_MAJOR,
@@ -280,11 +280,6 @@ static int beada_usb_probe(struct usb_interface *interface,
 		goto err_put_device;
 	}
 
-    ret = drm_client_setup_on_probe(dev, NULL, NULL);
-    if (ret)
-        dev_err(&beada->udev->dev,
-                  "drm_client_setup_on_probe() failed: %d\n", ret);
-
 	dev_info(&beada->udev->dev, "BeadaPanel %s detected\n", beada->geometrics.name);
 	return ret;
 
@@ -302,8 +297,6 @@ static void beada_usb_disconnect(struct usb_interface *interface)
 
 	dev_dbg(&beada->udev->dev, "--------------beada_usb_disconnect() enter\n");
 
-	put_device(beada->dmadev);
-	beada->dmadev = NULL;
 	drm_dev_unplug(dev);
 	drm_atomic_helper_shutdown(dev);
 
