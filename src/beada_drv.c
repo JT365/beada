@@ -336,4 +336,5 @@ static struct usb_driver beada_usb_driver = {
 
 module_usb_driver(beada_usb_driver);
 MODULE_AUTHOR("Hans de Goede <hdegoede@redhat.com>");
+MODULE_DESCRIPTION("DRM driver for BeadaPanel USB display");
 MODULE_LICENSE("GPL");

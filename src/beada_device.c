@@ -223,7 +223,7 @@ int beada_buf_copy(void *dst, const struct iosys_map *map, struct drm_framebuffe
 	if (ret)
 		return ret;
 
-	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map, fb, clip, fmtcnv_state, false);
+	drm_fb_xrgb8888_to_rgb565((struct iosys_map *)dst, &pitch, map, fb, clip, fmtcnv_state);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
