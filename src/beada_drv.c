@@ -220,7 +220,7 @@ static int beada_usb_probe(struct usb_interface *interface,
 	beada = devm_drm_dev_alloc(&interface->dev, &beada_drm_driver,
 				      struct beada_device, dev);
 	if (IS_ERR(beada)) {
-		dev_err(&beada->udev->dev, "devm_drm_dev_alloc() failed\n");
+		dev_err(&interface->dev, "devm_drm_dev_alloc() failed\n");
 		return PTR_ERR(beada);
 	}
 	
@@ -296,6 +296,8 @@ static void beada_usb_disconnect(struct usb_interface *interface)
 
 	dev_dbg(&beada->udev->dev, "--------------beada_usb_disconnect() enter\n");
 
+	put_device(beada->dmadev);
+	beada->dmadev = NULL;
 	drm_dev_unplug(dev);
 	drm_atomic_helper_shutdown(dev);
 
