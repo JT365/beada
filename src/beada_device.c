@@ -195,18 +195,24 @@ int beada_misc_request(struct beada_device *beada)
 		return -EIO;
 	}
 
+	beada->geometrics.name = "unknown";
+	beada->geometrics.margin = 0;
+	beada->geometrics.format = 0;
+	beada->geometrics.width = beada->info.screen_resolution_x;
+	beada->geometrics.height = beada->info.screen_resolution_y;
+	beada->geometrics.width_mm = 0;
+	beada->geometrics.height_mm = 0;
+
+    if (beada->info.firmware_version<710) {
+        dev_info(&beada->udev->dev, "firmware_version<710 %d\n", beada->info.firmware_version);
+        return 0;
+    }
+
 	/* find parameters for performance optimization. */
 	ret = find_optimize(beada->info.os_version);
 	if (ret<0) {
 		/* fall back to use a regular format, if current device absent in santa_claus. */
 		dev_info(&beada->udev->dev, "find_optimize() failed %d\n", ret);
-		beada->geometrics.name = "unknown";
-		beada->geometrics.margin = 0;
-		beada->geometrics.format = 0;
-		beada->geometrics.width = beada->info.screen_resolution_x;
-		beada->geometrics.height = beada->info.screen_resolution_y;
-		beada->geometrics.width_mm = 0;
-		beada->geometrics.height_mm = 0;
 	}
 	else
 		beada->geometrics = santa_claus[ret].para;
